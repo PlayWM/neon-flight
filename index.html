@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const SCREEN_WIDTH = 450;
 const SCREEN_HEIGHT = 800;
-const VERSION_STR = "v20261005.Web05";
+const VERSION_STR = "v20261005.Web06";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
 // --- [Web Audio API 사운드 신시사이저] ---
@@ -97,8 +97,9 @@ const CONFIG = {
   CLONE_SHIP_DURATION: 30.0,
   SHIELD_DURATION: 30.0,
   MAX_SKILL_GAUGE: 100.0,
-  BASE_GAUGE_PER_KILL: 2.0,
-  MIN_GAUGE_PER_KILL: 0.5,
+  // 1) 스킬 게이지 충전량 30% 증가 (2.0 -> 2.6)
+  BASE_GAUGE_PER_KILL: 2.6,
+  MIN_GAUGE_PER_KILL: 0.65,
   GAUGE_BOOST_DURATION: 20.0,
   SLOT_CYCLE_INTERVAL: 0.105,
   SLOT_AUTO_PICK_TIMEOUT: 5.0,
@@ -331,25 +332,26 @@ class Enemy {
     this.radius = maxHp <= 8 ? 20 : (maxHp <= 18 ? 25 : 30);
     this.hasShield = Math.random() < 0.03;
   }
-  update(dt, elapsed, speedScale=1.0) {
+  // 2) 60초 동안 좌우 움직임 폭 50% 축소 (widthScale)
+  update(dt, elapsed, speedScale=1.0, widthScale=1.0) {
     const effSpeed = this.speed * speedScale;
     const step = dt * 60 * speedScale;
     if (this.patternType === "DIVE") {
       if (!this.diveTriggered && this.y > 180) { this.diveTriggered = true; this.speed *= 1.8; }
       this.y += effSpeed * (dt * 60);
-      this.x += Math.sin(elapsed * 5.0) * (1.5 * step);
+      this.x += Math.sin(elapsed * 5.0) * (1.5 * step * widthScale);
     } else if (this.patternType === "ZIGZAG") {
       this.y += (effSpeed * 0.9) * (dt * 60);
-      this.x += this.curveVx * step;
+      this.x += (this.curveVx * widthScale) * step;
       if (this.x <= this.radius + 5 || this.x >= SCREEN_WIDTH - this.radius - 5) this.curveVx *= -1;
     } else if (this.patternType === "SINE") {
       this.y += effSpeed * (dt * 60);
-      this.x = this.originX + Math.sin(elapsed * this.sineFreq + this.sinePhase) * this.sineAmp;
+      this.x = this.originX + Math.sin(elapsed * this.sineFreq + this.sinePhase) * (this.sineAmp * widthScale);
     } else if (this.patternType === "SMOOTH_CURVE") {
       this.y += effSpeed * (dt * 60);
       this.curveTimer -= dt;
       if (this.curveTimer <= 0) { this.curveVx = (Math.random() * 7) - 3.5; this.curveTimer = 0.5 + Math.random() * 0.7; }
-      this.x += this.curveVx * step;
+      this.x += (this.curveVx * widthScale) * step;
     } else {
       this.y += (effSpeed * 1.15) * (dt * 60);
     }
@@ -807,7 +809,6 @@ function gameLoop(now) {
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     stars.forEach(s => s.draw());
 
-    // 7) 타이틀 폰트 크기 30% 확대 (22px -> 29px)
     ctx.fillStyle = "#00f5ff";
     ctx.font = "bold 29px Arial";
     ctx.textAlign = "center";
@@ -821,7 +822,7 @@ function gameLoop(now) {
       lastRandomSwitch = curTime;
       randomCardDesign = Math.floor(Math.random() * 4);
     }
-    // 5) 4번째 비행기 수치 변경 속도 30% 가속 (0.25s -> 0.175s)
+    // 4번째 비행기 수치 변경 속도
     if (curTime - lastRollTime >= 0.175) {
       lastRollTime = curTime;
       rollP = Math.floor(1 + Math.random() * 3);
@@ -852,7 +853,6 @@ function gameLoop(now) {
       ctx.font = "bold 15px Arial";
       ctx.fillText(c.name, 115, c.y + 22);
 
-      // 6) 각 비행기별 능력치 최고값 1개 강조 (두껍고 밝은 컬러)
       const maxVal = Math.max(c.p, c.s, c.r);
       const isMaxP = (c.p === maxVal);
       const isMaxS = (c.s === maxVal && !isMaxP);
@@ -879,7 +879,6 @@ function gameLoop(now) {
       ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 50);
     });
 
-    // 8) 첫 화면 제일 아래 Top 5 별도창
     const t5Y = 515;
     ctx.fillStyle = "rgba(10, 15, 30, 0.65)";
     ctx.beginPath();
@@ -957,13 +956,15 @@ function gameLoop(now) {
     player.update(dt);
     player.shoot(curTime, bullets);
 
-    // 1) 초반 30초 동안 적 움직임 50% 감속 (speedScale = 0.5)
-    const isEarlyPhase = (elapsed < 30.0);
+    // 2) 초반 60초 적용: 속도 50% 감속, 체력 30% 감속, 좌우 폭 50% 축소
+    const isEarlyPhase = (elapsed < 60.0);
     const speedScale = isEarlyPhase ? 0.5 : 1.0;
+    const widthScale = isEarlyPhase ? 0.5 : 1.0;
     const hpScale = isEarlyPhase ? 0.7 : 1.0;
     const earlyGaugeMultiplier = isEarlyPhase ? 1.5 : 1.0;
 
     const steps30s = Math.floor(elapsed / 30);
+    // 1) 스킬 게이지 기본 충전량 2.6 기반 계산
     const baseGaugePerKill = Math.max(CONFIG.MIN_GAUGE_PER_KILL, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.92, steps30s));
     const gaugePerKill = baseGaugePerKill * (gaugeBoostTimer > 0 ? 2 : 1) * earlyGaugeMultiplier;
 
@@ -1049,7 +1050,8 @@ function gameLoop(now) {
 
     for (let ei = enemies.length - 1; ei >= 0; ei--) {
       const e = enemies[ei];
-      e.update(dt, elapsed, speedScale);
+      // 2) 60초 동안 속도 및 좌우 폭 50% 축소 전달
+      e.update(dt, elapsed, speedScale, widthScale);
       if (e.y > SCREEN_HEIGHT + 40) { enemies.splice(ei, 1); continue; }
 
       for (let bi = bullets.length - 1; bi >= 0; bi--) {
@@ -1121,12 +1123,12 @@ function gameLoop(now) {
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     stars.forEach(s => s.draw());
 
-    // 9) 인게임 Top 10 순위창을 적 비행기 뒤쪽(배경 바로 위)에 먼저 렌더링 + 투명도 증가 (0.4 -> 0.25)
+    // 9) 리더보드 HUD를 적 비행기보다 뒤쪽에 배치 & 투명도 증가 (0.25)
     ctx.fillStyle = "rgba(10, 15, 30, 0.25)";
     ctx.fillRect(10, 10, 150, 150);
     ctx.strokeStyle = "rgba(0, 245, 255, 0.2)";
     ctx.strokeRect(10, 10, 150, 150);
-    ctx.fillStyle = "rgba(0, 245, 255, 0.7)";
+    ctx.fillStyle = "#00f5ff";
     ctx.font = "10px monospace";
     ctx.textAlign = "left";
     ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
@@ -1135,7 +1137,7 @@ function gameLoop(now) {
       ctx.fillText(`${idx+1}. ${item.name} ${item.score}`, 16, 38 + idx * 12);
     });
 
-    // 그 위에 적 비행기, 투사체, 플레이어 렌더링
+    // 전방 오브젝트 렌더링
     activeLasers.forEach(l => {
       ctx.strokeStyle = "#00f5ff";
       ctx.lineWidth = 3;
@@ -1162,7 +1164,7 @@ function gameLoop(now) {
     ctx.font = "13px Arial";
     ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, SCREEN_WIDTH - 20, 45);
 
-    // 하단 정보 표시
+    // 하단 스탯 및 버전 정보
     const baseBottomY = SCREEN_HEIGHT - 12;
     ctx.textAlign = "left";
     ctx.fillStyle = "#46465a";
@@ -1176,7 +1178,7 @@ function gameLoop(now) {
     ctx.fillStyle = player.shieldRemain > 0 ? "#32ff78" : "#808096";
     ctx.fillText(`SHIELD: ${player.shieldRemain > 0 ? Math.round(player.shieldRemain) + 's' : 'OFF'}`, 10, baseBottomY - 10);
 
-    // 게이지 바
+    // 스킬 게이지 바
     const gw = 130, gh = 16, gx = SCREEN_WIDTH - gw - 20, gy = SCREEN_HEIGHT - 35;
     const gPct = Math.min(1.0, skillGauge / CONFIG.MAX_SKILL_GAUGE);
     if (gPct >= 0.8) {
