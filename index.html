@@ -23,7 +23,7 @@
 
 <script>
 // ==========================================
-// Neon Flight: Overdrive (Ultra-Crisp Edition)
+// Neon Flight: Overdrive
 // ==========================================
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -32,11 +32,11 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web14";
+const VERSION_STR = "v20261006.Web15";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
-// 2) 내부 캔버스 버퍼 기본 2배 해상도(900x1600) + 기기별 DPR(1~3배) 곱연산
-const BASE_SCALE = 2.0;
+// 2) 해상도 2배 추가 업스케일 (기존 2배 -> 4배 기반)
+const BASE_SCALE = 4.0;
 const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
 const renderScale = BASE_SCALE * dpr;
 
@@ -45,7 +45,6 @@ canvas.height = Math.floor(LOGICAL_HEIGHT * renderScale);
 canvas.style.width = LOGICAL_WIDTH + "px";
 canvas.style.height = LOGICAL_HEIGHT + "px";
 
-// 드로잉 콘텍스트 안티앨리어싱 최적화
 try {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
@@ -73,7 +72,7 @@ try {
     .catch(() => { userCountry = "GL"; });
 } catch(e) { userCountry = "GL"; }
 
-// --- [Web Audio API 사운드 신시사이저 & BGM 엔진] ---
+// --- [Web Audio API 신시사이저 & BGM 엔진] ---
 let audioCtx = null;
 let bgmInterval = null;
 let bgmStep = 0;
@@ -210,7 +209,8 @@ const CONFIG = {
   MAX_ENEMY_HP_CAP: 30,
   BASE_ENEMY_SPEED: 3.6,
   LASER_WEAPON_INTERVAL: 1.0,
-  LASER_BEAM_LINGER_TIME: 0.2,
+  // 1) 레이저 줄 노출 시간 50% 단축 (0.2s -> 0.1s)
+  LASER_BEAM_LINGER_TIME: 0.1,
   CLONE_SHIP_DURATION: 30.0,
   MAX_SKILL_GAUGE: 100.0,
   BASE_GAUGE_PER_KILL: 2.6,
@@ -279,6 +279,64 @@ class Star {
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+// 3) 혜성 (Comet) 클래스
+class Comet {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.active = false;
+    this.x = 0;
+    this.y = 0;
+    this.vx = 0;
+    this.vy = 0;
+    this.length = 0;
+    this.alpha = 0;
+  }
+  spawn() {
+    this.active = true;
+    this.x = Math.random() * (LOGICAL_WIDTH * 0.8);
+    this.y = -20;
+    const speed = 4.0 + Math.random() * 3.5;
+    const angle = (55 + Math.random() * 20) * (Math.PI / 180);
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.length = 40 + Math.random() * 40;
+    this.alpha = 0.12 + Math.random() * 0.15; // 방해되지 않는 은은한 투명도
+  }
+  update(dt) {
+    if (!this.active) return;
+    this.x += this.vx * (dt * 60);
+    this.y += this.vy * (dt * 60);
+    if (this.x > LOGICAL_WIDTH + 60 || this.y > LOGICAL_HEIGHT + 60) {
+      this.active = false;
+    }
+  }
+  draw() {
+    if (!this.active) return;
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    const tailX = this.x - (this.vx * (this.length / 8));
+    const tailY = this.y - (this.vy * (this.length / 8));
+    const grad = ctx.createLinearGradient(tailX, tailY, this.x, this.y);
+    grad.addColorStop(0, "rgba(0, 245, 255, 0)");
+    grad.addColorStop(1, "rgba(255, 255, 255, 0.9)");
+
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -366,7 +424,6 @@ class ExplosionFX {
   }
 }
 
-// 6번 조건: 번개 볼트 이펙트 클래스
 class LightningBolt {
   constructor(x, y, radius) {
     this.x = x;
@@ -387,7 +444,6 @@ class LightningBolt {
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 지그재그 번개선 4가닥
     for (let k = 0; k < 4; k++) {
       ctx.beginPath();
       ctx.moveTo(this.x, this.y);
@@ -588,11 +644,7 @@ class Player {
     this.targetX = this.x; this.targetY = this.y;
     this.radius = 22; this.shieldRemain = 0.0; this.lastShot = 0.0;
     this.isAlive = true;
-
-    // 6번 조건: 스피드형 8/16렙 30초 주기 보호막 관리
     this.speedShieldCycleTimer = 0.0;
-
-    // 6번 조건: 발사속도형 8/16렙 3초 주기 번개 관리
     this.lightningTimer = 0.0;
   }
   getRealSpeed() {
@@ -613,7 +665,7 @@ class Player {
     if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
     if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
 
-    // 6번 조건: 스피드형 8렙(10초 보호막) / 16렙(20초 보호막) 30초 주기
+    // 스피드형 8렙/16렙 보호막 주기
     if (this.name === "Speed" && this.speedStat >= 8) {
       this.speedShieldCycleTimer += dt;
       if (this.speedShieldCycleTimer >= 30.0) {
@@ -624,7 +676,7 @@ class Player {
       }
     }
 
-    // 6번 조건: 발사속도형 8렙(3배 크기) / 16렙(5배 크기) 3초 주기 전방 번개 폭풍
+    // 발사속도형 8렙/16렙 번개
     if (this.pType === 2 && this.fireRateStat >= 8) {
       this.lightningTimer += dt;
       if (this.lightningTimer >= 3.0) {
@@ -637,7 +689,6 @@ class Player {
         lightningList.push(new LightningBolt(lx, ly, lRadius));
         playTone(850, 0.18, "sawtooth", -400, 0.25);
 
-        // 번개 범위 내 적 즉각 파괴
         for (let ei = enemiesList.length - 1; ei >= 0; ei--) {
           const e = enemiesList[ei];
           if (Math.hypot(e.x - lx, e.y - ly) <= lRadius + e.radius) {
@@ -693,7 +744,6 @@ class Player {
       }
       playTone(600, 0.05, "sine", -250);
     } else if (this.pType === 1) {
-      // 6번 조건: 파워형 8렙(양쪽 50% 파워/크기 미사일) / 16렙(양쪽 100% 본체 동일 파워 미사일)
       const isSplash = (this.powerStat % 3 === 0) && isTriggerShot;
       bullets.push(new Bullet(px, py - 24, 0, -14, dmg * 1.5, isSplash ? 9 : 7, isSplash ? "#ff2d2d" : "#ff8c00", isSplash));
 
@@ -761,7 +811,6 @@ class Player {
     drawShipAt(this.x, this.y);
     if (this.clonePlaneTimer > 0) drawShipAt(this.x + 42, this.y);
 
-    // 보호막 렌더링
     if (this.shieldRemain > 0) {
       const shieldPulse = Math.sin(curTime * 14.0) * 2.5;
       const shR = this.radius + 32 + shieldPulse;
@@ -783,7 +832,6 @@ class Player {
       }
     }
 
-    // 1번 & 6번 조건: 보호막 잔여시간 소숫점 한자리 표기
     let timerLines = [];
     if (this.laserWeaponTimer > 0) timerLines.push(`LASER ${Math.round(this.laserWeaponTimer)}s`);
     if (this.clonePlaneTimer > 0) timerLines.push(`CLONE ${Math.round(this.clonePlaneTimer)}s`);
@@ -800,6 +848,10 @@ class Player {
 
 // --- [전역 상태] ---
 let stars = Array.from({ length: 65 }, () => new Star());
+// 3) 혜성 3개 풀 생성
+let comets = Array.from({ length: 3 }, () => new Comet());
+let lastCometSpawnCheck = 0;
+
 let player = null;
 let bullets = [];
 let enemies = [];
@@ -815,7 +867,8 @@ let legendShowcaseStartTime = 0;
 
 let score = 0;
 let skillGauge = 0.0;
-let startTime = 0;
+// 4) 일시정지 누적 시간 지원 인게임 타이머
+let inGameElapsedTime = 0;
 let lastSpawnTime = 0;
 let nextBossTargetTime = 90.0;
 let gaugeBoostTimer = 0.0;
@@ -827,7 +880,6 @@ let minigameRollingTime = 30;
 let minigameSelectedTime = null;
 let minigameFinishTimestamp = 0;
 
-// 3번 조건: 랜덤 뽑기 네모 외곽 10개 별 파라미터 사전 생성
 const STAR_OFFSETS = [
   { x: -8, y: -6, s: 4, delay: 0 },
   { x: 100, y: -8, s: 3, delay: 1.2 },
@@ -856,7 +908,6 @@ let shuffledMultiplierPool = [...MULTIPLIER_POOL].sort(() => Math.random() - 0.5
 let lastMultRollTime = 0;
 let currentMultIndex = 0;
 
-// 4번 조건: 랜덤 뽑기 당첨 후 2초간 화면 중앙 표시 관리 상태
 let randomPickShowcaseActive = false;
 let randomPickShowcaseStartTime = 0;
 let randomPickResult = null;
@@ -940,22 +991,23 @@ function startBattle(type) {
 function initBattleState() {
   bullets = []; enemies = []; bossMissiles = []; bossDropItems = []; lightningBolts = []; activeLasers = []; currentBoss = null;
   score = 0; skillGauge = 0.0; gaugeBoostTimer = 0.0;
-  startTime = performance.now() / 1000;
-  lastSpawnTime = startTime;
-  lastDpsCheckTime = startTime;
+  inGameElapsedTime = 0;
+  lastSpawnTime = 0;
+  lastDpsCheckTime = 0;
   nextBossTargetTime = 90.0;
   isTouchActive = false;
   randomPickShowcaseActive = false;
   gameState = 1;
 }
 
+// 4) 스킬 뽑기 화면 진입 (전투 일시정지)
 function triggerSlot() {
   enemies.forEach(e => explosions.push(new ExplosionFX(e.x, e.y, "#ff0080")));
   enemies = [];
   playSlotEnterSound();
   shuffledMultiplierPool = [...MULTIPLIER_POOL].sort(() => Math.random() - 0.5);
   randomPickShowcaseActive = false;
-  gameState = 2;
+  gameState = 2; // 전투 루프가 멈추고 inGameElapsedTime 증가 중단
 }
 
 function applyChosenSkill(code, customDuration=null) {
@@ -1029,17 +1081,15 @@ function handlePointerDown(clientX, clientY) {
         } else {
           applyChosenSkill(c.code);
           playSlotSelectedSound();
-          gameState = 1;
+          gameState = 1; // 4) 스킬 선택 완료 후 전투 시간 재개
         }
         break;
       }
     }
 
-    // 3번 조건: 아래로 더 내린 랜덤 뽑기 버튼 (y: 470) 클릭 판정
     const btnMult = { x: 35, y: 470, w: 380, h: 95 };
     if (!clickedSkill && coords.x >= btnMult.x && coords.x <= btnMult.x + btnMult.w && coords.y >= btnMult.y && coords.y <= btnMult.y + btnMult.h) {
       const picked = shuffledMultiplierPool[currentMultIndex];
-      // 4번 조건: 2초간 화면 중앙에 노출 및 실지 스킬 가산
       if (picked.type === "PWR") player.powerStat += picked.val;
       else if (picked.type === "SPD") player.speedStat += (player.name === "Power" ? picked.val * 0.7 : picked.val);
       else if (picked.type === "RATE") player.fireRateStat += picked.val;
@@ -1116,10 +1166,21 @@ function safeGameLoop(now) {
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    // 2) 해상도 고선명 버퍼 스케일링 일괄 적용
     ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
     stars.forEach(s => s.update());
+    
+    // 3) 혜성 발생 간격 제어 (최대 3개 유지, 5~9초마다 무작위 1개 시도)
+    if (curTime - lastCometSpawnCheck > 3.0) {
+      lastCometSpawnCheck = curTime;
+      const activeCount = comets.filter(c => c.active).length;
+      if (activeCount < 3 && Math.random() < 0.45) {
+        const freeComet = comets.find(c => !c.active);
+        if (freeComet) freeComet.spawn();
+      }
+    }
+    comets.forEach(c => c.update(dt));
+
     explosions.forEach(ex => ex.update(dt));
     explosions = explosions.filter(ex => ex.life > 0);
     lightningBolts.forEach(l => l.update(dt));
@@ -1130,6 +1191,7 @@ function safeGameLoop(now) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
 
       ctx.fillStyle = "#00f5ff";
       ctx.font = "bold 29px Arial";
@@ -1243,6 +1305,7 @@ function safeGameLoop(now) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
 
       const elapsedShowcase = curTime - legendShowcaseStartTime;
       const remainSec = Math.max(0, (3.0 - elapsedShowcase).toFixed(1));
@@ -1274,7 +1337,10 @@ function safeGameLoop(now) {
 
     // 2. BATTLE STATE
     } else if (gameState === 1) {
-      const elapsed = curTime - startTime;
+      // 4) 스킬 선택 화면에 있지 않은 순수 전투 상태에서만 시간 누적
+      inGameElapsedTime += dt;
+      const elapsed = inGameElapsedTime;
+
       if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
       if (player && player.isAlive) {
@@ -1291,7 +1357,6 @@ function safeGameLoop(now) {
         }
       }
 
-      // 6번 조건 번개 엔진 연동
       player.update(dt, enemies, lightningBolts);
       player.shoot(curTime, bullets);
 
@@ -1313,16 +1378,22 @@ function safeGameLoop(now) {
       const baseGaugePerKill = Math.max(CONFIG.MIN_GAUGE_PER_KILL, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.92, steps30s));
       const gaugePerKill = baseGaugePerKill * (gaugeBoostTimer > 0 ? 2 : 1) * earlyGaugeMultiplier;
 
-      const timeFactor = Math.min(1.0, elapsed / 180.0);
+      // 6) 60초 이후 적 비행기 증가 속도 50% 감속: 매 20초마다 10%씩 적 스폰량 증가 (스폰 간격 0.909배 감축)
+      let spawnInterval;
+      if (elapsed < 60.0) {
+        // 초반 60초는 여유로운 스폰 유지
+        spawnInterval = CONFIG.MAX_SPAWN_INTERVAL * 1.8;
+      } else {
+        const steps20sAfter60 = Math.floor((elapsed - 60.0) / 20.0);
+        // 매 20초마다 스폰 주기 1/1.10배로 점진 단축 (스폰 빈도 +10%)
+        const scaleRate = Math.pow(1 / 1.10, steps20sAfter60);
+        spawnInterval = Math.max(CONFIG.MIN_SPAWN_INTERVAL, CONFIG.MAX_SPAWN_INTERVAL * scaleRate);
+      }
 
-      // 5번 조건: 초반 60초 동안 나타나는 적 비행기 수 50% 감소 (스폰 간격 2배 확대)
-      const baseSpawnInterval = Math.max(CONFIG.MIN_SPAWN_INTERVAL, (CONFIG.MAX_SPAWN_INTERVAL - timeFactor * 0.16) * Math.pow(1 / 1.10, steps30s));
-      const spawnInterval = (elapsed < 60.0) ? (baseSpawnInterval * 2.0) : baseSpawnInterval;
-
-      if (curTime - lastSpawnTime > spawnInterval) {
-        lastSpawnTime = curTime;
+      if (elapsed - lastSpawnTime > spawnInterval) {
+        lastSpawnTime = elapsed;
         const calculatedHp = Math.max(1, Math.round((2 + Math.random() * 3) * hpScale));
-        enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + timeFactor * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length)));
+        enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length)));
       }
 
       if (!currentBoss && elapsed >= nextBossTargetTime) {
@@ -1331,7 +1402,6 @@ function safeGameLoop(now) {
       }
       if (currentBoss) currentBoss.update(dt, curTime, bossMissiles);
 
-      // 보호막 리펄서 역장 물리
       if (player.isAlive && player.shieldRemain > 0) {
         const shieldFieldRadius = player.radius + 36;
         bossMissiles.forEach(m => {
@@ -1399,6 +1469,7 @@ function safeGameLoop(now) {
           }
         });
       }
+      // 1) 50% 단축된 노출 시간 적용
       activeLasers = activeLasers.filter(l => curTime - l.t < CONFIG.LASER_BEAM_LINGER_TIME);
 
       bullets.forEach(b => b.update(dt));
@@ -1407,12 +1478,10 @@ function safeGameLoop(now) {
       bossMissiles.forEach(m => m.update(dt));
       bossMissiles = bossMissiles.filter(m => m.y < LOGICAL_HEIGHT + 30);
 
-      // 보스 미사일 충돌
       for (let i = bossMissiles.length - 1; i >= 0; i--) {
         const m = bossMissiles[i];
         if (player.isAlive && Math.hypot(player.x - m.x, player.y - m.y) < player.radius + m.radius) {
           bossMissiles.splice(i, 1);
-          // 6번 조건: 보호막 활성 시 파괴되지 않고 보호
           if (player.shieldRemain <= 0) {
             player.isAlive = false;
             explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
@@ -1423,7 +1492,6 @@ function safeGameLoop(now) {
         }
       }
 
-      // 적 기체 충돌
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
         e.update(dt, elapsed, speedScale, widthScale);
@@ -1453,7 +1521,6 @@ function safeGameLoop(now) {
         }
 
         if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
-          // 6번 조건: 보호막 활성 시 내 비행기 파괴 방지
           if (player.shieldRemain > 0) {
             enemies.splice(ei, 1);
             explosions.push(new ExplosionFX(e.x, e.y, "#32ff78"));
@@ -1497,6 +1564,7 @@ function safeGameLoop(now) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
 
       ctx.fillStyle = "rgba(10, 15, 30, 0.25)";
       ctx.fillRect(10, 10, 155, 150);
@@ -1566,11 +1634,12 @@ function safeGameLoop(now) {
       ctx.font = "12px Arial";
       ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
 
-    // 3. SLOT STATE (스킬 수동 선택 + 3) 아래로 내린 룰렛 버튼 & 별 10개)
+    // 3. SLOT STATE
     } else if (gameState === 2) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
       explosions.forEach(ex => ex.draw());
 
       ctx.textAlign = "center";
@@ -1609,7 +1678,6 @@ function safeGameLoop(now) {
         ctx.fillText(c.desc, c.x + c.w / 2, c.y + 60);
       });
 
-      // 3) 아래로 내린 룰렛 박스 (y: 470)
       if (curTime - lastMultRollTime >= 0.20) {
         lastMultRollTime = curTime;
         currentMultIndex = (currentMultIndex + 1) % shuffledMultiplierPool.length;
@@ -1624,7 +1692,6 @@ function safeGameLoop(now) {
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      // 3) 랜덤 뽑기 네모 외곽 10개 반짝이 별 렌더링
       STAR_OFFSETS.forEach((st, idx) => {
         const tw = Math.sin((curTime + st.delay) * 8.0) * 0.5 + 0.5;
         const starX = btnMult.x + st.x;
@@ -1654,7 +1721,6 @@ function safeGameLoop(now) {
       ctx.font = "11px Arial";
       ctx.fillText("TAP OR CLICK TO GRAB THIS BONUS!", btnMult.x + btnMult.w / 2, btnMult.y + 82);
 
-      // 4) 랜덤 뽑기 당첨 시 2초간 화면 중앙 노출 연출
       if (randomPickShowcaseActive) {
         const showcaseElapsed = curTime - randomPickShowcaseStartTime;
         ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
@@ -1686,7 +1752,7 @@ function safeGameLoop(now) {
 
         if (showcaseElapsed >= 2.0) {
           randomPickShowcaseActive = false;
-          gameState = 1; // 2초 후 실지 게임으로 복귀
+          gameState = 1; // 4) 스킬 선택 완료 후 전투 복귀
         }
       }
 
@@ -1700,6 +1766,7 @@ function safeGameLoop(now) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
 
       const popW = 320, popH = 240;
       const popX = LOGICAL_WIDTH / 2 - popW / 2;
@@ -1737,7 +1804,7 @@ function safeGameLoop(now) {
 
         if (curTime - minigameFinishTimestamp >= 1.2) {
           applyChosenSkill(minigameTargetOption, minigameSelectedTime);
-          gameState = 1;
+          gameState = 1; // 4) 룰렛 완료 후 전투 복귀
         }
       }
 
@@ -1746,6 +1813,7 @@ function safeGameLoop(now) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
       stars.forEach(s => s.draw());
+      comets.forEach(c => c.draw());
 
       const popY = LOGICAL_HEIGHT * 0.3;
       ctx.fillStyle = "#14192d";
