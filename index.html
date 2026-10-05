@@ -1,596 +1,525 @@
-# -*- coding: utf-8 -*-
-# ==========================================
-# Version: v20261005.005
-# ==========================================
-
-import pygame
-import random
-import sys
-import math
-import time
-import asyncio
-
-pygame.init()
-pygame.font.init()
-
-try:
-    pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
-except Exception:
-    pass
-
-CONFIG = {
-    "BASE_PLAYER_SPEED": 5.2,
-    "STAT_SPEED_FACTOR": 0.65,
-    "BASE_FIRE_INTERVAL": 0.405,
-    "FIRE_RATE_REDUCTION": 0.05,
-    "HIT_PROBABILITY": 0.50,
-    "TARGET_HP_PRESSURE_RATIO": 0.85,
-    "MIN_SPAWN_INTERVAL": 0.22,
-    "MAX_SPAWN_INTERVAL": 1.20,
-    "MAX_ENEMY_HP_CAP": 20,
-    "BASE_ENEMY_SPEED": 3.6,
-    "LASER_WEAPON_INTERVAL": 1.0,
-    "LASER_WEAPON_DURATION": 30.5,
-    "LASER_BEAM_LINGER_TIME": 0.2,
-    "CLONE_SHIP_DURATION": 30.0,
-    "SHIELD_DURATION": 30.0,
-    "INVINCIBLE_TIME_ON_SHIELD_BREAK": 0.6,
-    "MAX_SKILL_GAUGE": 100.0,
-    "GAUGE_PER_KILL": 14.0,
-    "SLOT_CYCLE_INTERVAL": 0.25,
-    "SLOT_AUTO_PICK_TIMEOUT": 5.0,
-    "SLOT_RESULT_DISPLAY_TIME": 2.0,
-    "POWER_DROP_SPEED": 3.6,
-    "GRAZE_DISTANCE": 32.0,
-    "GRAZE_GAUGE_BONUS": 0.5,
-    "BOSS_SPAWN_INTERVAL": 60.0
-}
-
-VERSION_STR = "v20261005.005"
-SCREEN_WIDTH = 450
-SCREEN_HEIGHT = 800
-FPS = 60
-
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption(f"Neon Flight: Overdrive - {VERSION_STR}")
-clock = pygame.time.Clock()
-
-COLOR_BG = (8, 8, 20)
-COLOR_CYAN = (0, 245, 255)
-COLOR_MAGENTA = (255, 0, 128)
-COLOR_YELLOW = (255, 230, 0)
-COLOR_WHITE = (255, 255, 255)
-COLOR_GRAY = (80, 80, 100)
-COLOR_GREEN = (50, 255, 120)
-COLOR_ORANGE = (255, 140, 0)
-COLOR_DARK_BLUE = (20, 25, 45)
-COLOR_RED = (255, 40, 40)
-COLOR_VERSION_DIM = (55, 55, 75)
-
-FONT_XL = pygame.font.Font(None, 34)
-FONT_L = pygame.font.Font(None, 28)
-FONT_M = pygame.font.Font(None, 20)
-FONT_S = pygame.font.Font(None, 16)
-FONT_LIST = pygame.font.Font(None, 14)
-FONT_TOP10 = pygame.font.Font(None, 14)
-FONT_VER = pygame.font.Font(None, 13)
-FONT_TIMER = pygame.font.Font(None, 14)
-
-STATE_SELECT = 0
-STATE_BATTLE = 1
-STATE_SLOT = 2
-STATE_GAMEOVER = 3
-game_state = STATE_SELECT
-
-shake_intensity = 0.0
-shake_decay = 18.0
-
-def add_screen_shake(amount):
-    global shake_intensity
-    shake_intensity = min(16.0, shake_intensity + amount)
-
-top10_list = [("ACE_PILOT", 120), ("SKY_HUNTER", 95), ("OVERDRIVE", 80)]
-
-TIER_THEMES = [
-    {"bg": (8, 8, 20), "star_tint": (180, 200, 255)},
-    {"bg": (12, 5, 24), "star_tint": (255, 180, 230)},
-    {"bg": (4, 18, 26), "star_tint": (150, 255, 240)},
-    {"bg": (24, 8, 8), "star_tint": (255, 200, 150)}
-]
-current_tier = 0
-
-class Star:
-    def __init__(self):
-        self.x = random.randint(0, SCREEN_WIDTH)
-        self.y = random.randint(0, SCREEN_HEIGHT)
-        self.speed = random.uniform(0.6, 2.2)
-        self.size = 1 if self.speed < 1.3 else 2
-        self.brightness = random.randint(70, 160)
-
-    def update(self):
-        self.y += self.speed
-        if self.y > SCREEN_HEIGHT:
-            self.y = 0
-            self.x = random.randint(0, SCREEN_WIDTH)
-
-    def draw(self, surf, tint):
-        r = int(self.brightness * (tint[0] / 255.0))
-        g = int(self.brightness * (tint[1] / 255.0))
-        b = int(self.brightness * (tint[2] / 255.0))
-        pygame.draw.circle(surf, (min(255, r), min(255, g), min(255, b)), (int(self.x), int(self.y)), self.size)
-
-stars = [Star() for _ in range(65)]
-
-def draw_pixel_matrix(surf, cx, cy, matrix, color_map, pixel_size=3):
-    rows = len(matrix)
-    cols = len(matrix[0])
-    start_x = int(cx - (cols * pixel_size) / 2)
-    start_y = int(cy - (rows * pixel_size) / 2)
-    for r_idx, row in enumerate(matrix):
-        for c_idx, val in enumerate(row):
-            if val != 0 and val in color_map:
-                col = color_map[val]
-                pygame.draw.rect(surf, col, (start_x + c_idx * pixel_size, start_y + r_idx * pixel_size, pixel_size, pixel_size))
-
-PIXEL_PLAYERS = {
-    0: [
-        [0,0,0,0,0,1,1,0,0,0,0,0],
-        [0,0,0,0,1,2,2,1,0,0,0,0],
-        [0,0,0,1,1,2,2,1,1,0,0,0],
-        [0,0,1,1,3,2,2,3,1,1,0,0],
-        [0,1,1,1,3,2,2,3,1,1,1,0],
-        [1,1,0,1,1,3,3,1,1,0,1,1],
-        [1,0,0,1,1,1,1,1,1,0,0,1],
-        [1,0,1,1,1,4,4,1,1,1,0,1],
-        [0,0,1,0,4,0,0,4,0,1,0,0]
-    ],
-    1: [
-        [0,0,0,1,1,1,1,1,1,0,0,0],
-        [0,0,1,1,2,2,2,2,1,1,0,0],
-        [0,1,1,2,3,3,3,3,2,1,1,0],
-        [1,1,1,1,3,3,3,3,1,1,1,1],
-        [1,1,1,1,1,1,1,1,1,1,1,1],
-        [1,1,0,1,1,1,1,1,1,0,1,1],
-        [1,0,0,1,1,1,1,1,1,0,0,1],
-        [1,1,1,1,4,1,1,4,1,1,1,1],
-        [0,1,0,4,4,0,0,4,4,0,1,0]
-    ],
-    2: [
-        [1,1,0,0,0,1,1,0,0,0,1,1],
-        [1,2,1,0,1,2,2,1,0,1,2,1],
-        [1,2,1,0,1,3,3,1,0,1,2,1],
-        [1,1,1,1,1,3,3,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1,1,1,1,1],
-        [1,0,1,1,1,0,0,1,1,1,0,1],
-        [1,0,4,0,0,0,0,0,0,4,0,1]
-    ]
-}
-
-PIXEL_ENEMIES = [
-    [[0,0,1,1,1,1,0,0],[0,1,2,2,2,2,1,0],[1,1,3,2,2,3,1,1],[1,1,1,1,1,1,1,1],[1,0,1,0,0,1,0,1],[0,1,0,0,0,0,1,0]],
-    [[0,0,0,1,1,0,0,0],[0,0,1,2,2,1,0,0],[0,1,2,3,3,2,1,0],[1,2,3,3,3,3,2,1],[0,1,2,3,3,2,1,0],[0,0,1,2,2,1,0,0],[0,0,0,1,1,0,0,0]],
-    [[1,0,0,0,0,0,0,1],[1,1,0,0,0,0,1,1],[1,1,1,0,0,1,1,1],[0,1,2,1,1,2,1,0],[0,0,1,2,2,1,0,0],[0,0,0,1,1,0,0,0]]
-]
-
-class Player:
-    def __init__(self, p_type):
-        self.p_type = p_type
-        self.x = SCREEN_WIDTH // 2
-        self.y = int(SCREEN_HEIGHT * 0.8)
-        self.target_x = self.x
-        self.target_y = self.y
-        self.radius = 22
-        self.power_stat = 1 if p_type != 1 else 3
-        self.speed_stat = 3 if p_type == 0 else 1
-        self.fire_rate_stat = 3 if p_type == 2 else 1
-        self.clone_plane_timer = 0.0
-        self.laser_weapon_timer = 0.0
-        self.last_laser_time = 0.0
-        self.shield_remain = 0.0
-        self.last_shot = 0.0
-        self.is_alive = True
-
-    def update_position(self, dt):
-        if self.clone_plane_timer > 0:
-            self.clone_plane_timer = max(0.0, self.clone_plane_timer - dt)
-        if self.laser_weapon_timer > 0:
-            self.laser_weapon_timer = max(0.0, self.laser_weapon_timer - dt)
-        if self.shield_remain > 0:
-            self.shield_remain = max(0.0, self.shield_remain - dt)
-
-        dx = self.target_x - self.x
-        dy = self.target_y - self.y
-        dist = math.hypot(dx, dy)
-        speed = (CONFIG["BASE_PLAYER_SPEED"] + self.speed_stat * 0.6) * 60.0 * dt
-        if dist > 0.5:
-            if dist <= speed:
-                self.x = self.target_x
-                self.y = self.target_y
-            else:
-                self.x += (dx / dist) * speed
-                self.y += (dy / dist) * speed
-
-    def shoot(self, current_time, bullets):
-        interval = max(0.08, CONFIG["BASE_FIRE_INTERVAL"] - self.fire_rate_stat * 0.05)
-        if current_time - self.last_shot >= interval:
-            self.last_shot = current_time
-            if self.p_type == 2:
-                bullets.append(Bullet(self.x - 12, self.y - 20, 0, -15, self.power_stat))
-                bullets.append(Bullet(self.x + 12, self.y - 20, 0, -15, self.power_stat))
-            else:
-                bullets.append(Bullet(self.x, self.y - 22, 0, -16, self.power_stat))
-            if self.clone_plane_timer > 0:
-                bullets.append(Bullet(self.x + 40, self.y - 22, 0, -16, self.power_stat))
-
-    def draw(self, surf):
-        matrix = PIXEL_PLAYERS[self.p_type]
-        cmap = {1: COLOR_CYAN, 2: COLOR_WHITE, 3: (0, 150, 255), 4: COLOR_YELLOW}
-        draw_pixel_matrix(surf, self.x, self.y, matrix, cmap, pixel_size=4)
-        if self.clone_plane_timer > 0:
-            draw_pixel_matrix(surf, self.x + 40, self.y, matrix, cmap, pixel_size=4)
-        if self.shield_remain > 0:
-            pygame.draw.circle(surf, COLOR_GREEN, (int(self.x), int(self.y)), self.radius + 12, 2)
-
-class Bullet:
-    def __init__(self, x, y, vx, vy, dmg):
-        self.x = x
-        self.y = y
-        self.vx = vx
-        self.vy = vy
-        self.dmg = dmg
-        self.radius = 4
-
-    def update(self):
-        self.x += self.vx
-        self.y += self.vy
-
-    def draw(self, surf):
-        pygame.draw.circle(surf, COLOR_YELLOW, (int(self.x), int(self.y)), self.radius)
-
-class LaserBeamLine:
-    def __init__(self, start_pos, target_pos, start_time):
-        self.start_pos = start_pos
-        self.target_pos = target_pos
-        self.birth_time = start_time
-
-    def is_expired(self, cur_time):
-        return (cur_time - self.birth_time) >= CONFIG["LASER_BEAM_LINGER_TIME"]
-
-    def draw(self, surf, cur_time):
-        elapsed = cur_time - self.birth_time
-        alpha = max(0, min(255, int((1.0 - (elapsed / CONFIG["LASER_BEAM_LINGER_TIME"])) * 255)))
-        laser_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        pygame.draw.line(laser_surf, (*COLOR_CYAN, alpha), self.start_pos, self.target_pos, 3)
-        pygame.draw.line(laser_surf, (*COLOR_WHITE, alpha), self.start_pos, self.target_pos, 1)
-        surf.blit(laser_surf, (0, 0))
-
-class Enemy:
-    def __init__(self):
-        self.x = float(random.randint(40, SCREEN_WIDTH - 40))
-        self.y = -30.0
-        self.hp = 3
-        self.speed = random.uniform(3.0, 5.0)
-        self.radius = 20
-
-    def update(self):
-        self.y += self.speed
-
-    def draw(self, surf):
-        matrix = PIXEL_ENEMIES[0]
-        cmap = {1: (255, 60, 100), 2: (255, 180, 0), 3: COLOR_WHITE}
-        draw_pixel_matrix(surf, self.x, self.y, matrix, cmap, pixel_size=4)
-
-player = None
-bullets = []
-enemies = []
-active_laser_lines = []
-score = 0
-skill_gauge = 0.0
-last_spawn = 0.0
-
-# 슬롯 옵션 기본 설정 (코드, 라벨, 가중치)
-SLOT_CONFIG_RAW = [
-    ("POWER_UP", "POWER UP (+1)", 30),
-    ("SPEED_UP", "SPEED UP (+1)", 30),
-    ("FIRE_RATE", "FIRING RATE (+1)", 30),
-    ("SHIELD", "SHIELD (30s)", 15),
-    ("LASER_WEAPON", "LASER WEAPON (30.5s)", 15),
-    ("CLONE_SHIP", "CLONE SHIP (30s)", 10)
-]
-
-slot_active_pool = []
-slot_start_time = 0.0
-slot_picked_code = None
-slot_picked_label = None
-slot_pick_time = 0.0
-slot_is_selected = False
-slot_anim_idx = 0
-
-def start_battle(p_type):
-    global player, bullets, enemies, active_laser_lines, score, skill_gauge, game_state, last_spawn
-    player = Player(p_type)
-    bullets.clear()
-    enemies.clear()
-    active_laser_lines.clear()
-    score = 0
-    skill_gauge = 0.0
-    last_spawn = time.time()
-    game_state = STATE_BATTLE
-
-def get_current_slot_pool():
-    pool = []
-    for code, label, weight in SLOT_CONFIG_RAW:
-        if code == "CLONE_SHIP" and player.clone_plane_timer > 0:
-            continue
-        if code == "POWER_UP" and player.power_stat >= 10:
-            continue
-        if code == "SPEED_UP" and player.speed_stat >= 10:
-            continue
-        if code == "FIRE_RATE" and player.fire_rate_stat >= 10:
-            continue
-        pool.append({"code": code, "label": label, "weight": weight})
-
-    if not pool:
-        pool = [{"code": "SHIELD", "label": "SHIELD (30s)", "weight": 50},
-                {"code": "LASER_WEAPON", "label": "LASER WEAPON (30.5s)", "weight": 50}]
-
-    total_w = sum(item["weight"] for item in pool)
-    for item in pool:
-        item["prob"] = (item["weight"] / total_w) * 100.0
-    return pool
-
-def trigger_slot_screen():
-    global game_state, enemies, slot_is_selected, slot_picked_code, slot_picked_label, slot_active_pool, slot_start_time
-    enemies.clear()
-    active_laser_lines.clear()
-    slot_is_selected = False
-    slot_picked_code = None
-    slot_picked_label = None
-    slot_start_time = time.time()
-    slot_active_pool = get_current_slot_pool()
-    game_state = STATE_SLOT
-
-def pick_slot_reward():
-    codes = [item["code"] for item in slot_active_pool]
-    weights = [item["weight"] for item in slot_active_pool]
-    chosen = random.choices(codes, weights=weights, k=1)[0]
-    for item in slot_active_pool:
-        if item["code"] == chosen:
-            return item["code"], item["label"]
-    return slot_active_pool[0]["code"], slot_active_pool[0]["label"]
-
-def apply_slot_reward(reward_code):
-    global player
-    if reward_code == "POWER_UP":
-        player.power_stat = min(10, player.power_stat + 1)
-    elif reward_code == "SPEED_UP":
-        player.speed_stat = min(10, player.speed_stat + 1)
-    elif reward_code == "FIRE_RATE":
-        player.fire_rate_stat = min(10, player.fire_rate_stat + 1)
-    elif reward_code == "CLONE_SHIP":
-        player.clone_plane_timer = CONFIG["CLONE_SHIP_DURATION"]
-    elif reward_code == "LASER_WEAPON":
-        player.laser_weapon_timer = CONFIG["LASER_WEAPON_DURATION"]
-        player.last_laser_time = time.time()
-    elif reward_code == "SHIELD":
-        player.shield_remain = CONFIG["SHIELD_DURATION"]
-
-async def main():
-    global game_state, score, skill_gauge, last_spawn
-    global slot_is_selected, slot_picked_code, slot_picked_label, slot_pick_time, slot_anim_idx
-    running = True
-
-    while running:
-        dt = clock.tick(FPS) / 1000.0
-        cur_time = time.time()
-
-        for st in stars:
-            st.update()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-
-            if game_state == STATE_SELECT:
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    mx, my = event.pos
-                    if 220 <= my <= 320:
-                        start_battle(0)
-                    elif 340 <= my <= 440:
-                        start_battle(1)
-                    elif 460 <= my <= 560:
-                        start_battle(2)
-
-            elif game_state == STATE_BATTLE:
-                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
-                    if pygame.mouse.get_pressed()[0]:
-                        tx, ty = event.pos
-                        player.target_x = tx
-                        player.target_y = ty - 80
-
-            elif game_state == STATE_SLOT:
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if not slot_is_selected and len(slot_active_pool) > 0:
-                        slot_is_selected = True
-                        slot_pick_time = cur_time
-                        slot_picked_code, slot_picked_label = pick_slot_reward()
-
-            elif game_state == STATE_GAMEOVER:
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    game_state = STATE_SELECT
-
-        screen.fill(COLOR_BG)
-        for st in stars:
-            st.draw(screen, (200, 220, 255))
-
-        if game_state == STATE_SELECT:
-            t = FONT_L.render("NEON FLIGHT: OVERDRIVE", True, COLOR_CYAN)
-            sub = FONT_S.render("CLICK A SHIP TO START", True, COLOR_WHITE)
-            screen.blit(t, (SCREEN_WIDTH // 2 - t.get_width() // 2, 90))
-            screen.blit(sub, (SCREEN_WIDTH // 2 - sub.get_width() // 2, 140))
-
-            cards = [("1. SPEED", 220, 0), ("2. POWER", 340, 1), ("3. TWIN", 460, 2)]
-            for name, y, p_type in cards:
-                box = pygame.Rect(40, y, SCREEN_WIDTH - 80, 80)
-                pygame.draw.rect(screen, (25, 30, 50), box, border_radius=8)
-                pygame.draw.rect(screen, COLOR_CYAN, box, 2, border_radius=8)
-                txt = FONT_M.render(name, True, COLOR_WHITE)
-                screen.blit(txt, (box.centerx - txt.get_width() // 2, box.centery - txt.get_height() // 2))
-
-        elif game_state == STATE_BATTLE:
-            player.update_position(dt)
-            player.shoot(cur_time, bullets)
-
-            # 레이저 무기 발사 로직
-            if player.is_alive and player.laser_weapon_timer > 0 and cur_time - player.last_laser_time >= CONFIG["LASER_WEAPON_INTERVAL"]:
-                player.last_laser_time = cur_time
-                if enemies:
-                    target = min(enemies, key=lambda e: math.hypot(e.x - player.x, e.y - player.y))
-                    active_laser_lines.append(LaserBeamLine((player.x, player.y - 12), (target.x, target.y), cur_time))
-                    enemies.remove(target)
-                    score += 1
-                    skill_gauge += CONFIG["GAUGE_PER_KILL"]
-
-            active_laser_lines = [line for line in active_laser_lines if not line.is_expired(cur_time)]
-
-            if cur_time - last_spawn >= 0.8:
-                last_spawn = cur_time
-                enemies.append(Enemy())
-
-            for b in bullets[:]:
-                b.update()
-                if b.y < -10:
-                    bullets.remove(b)
-
-            for e in enemies[:]:
-                e.update()
-                if e.y > SCREEN_HEIGHT + 30:
-                    enemies.remove(e)
-                    continue
-
-                for b in bullets[:]:
-                    if math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius:
-                        e.hp -= b.dmg
-                        if b in bullets:
-                            bullets.remove(b)
-                        if e.hp <= 0:
-                            if e in enemies:
-                                enemies.remove(e)
-                            score += 1
-                            skill_gauge += CONFIG["GAUGE_PER_KILL"]
-                            break
-
-                if math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius:
-                    if player.shield_remain > 0:
-                        player.shield_remain = 0.0
-                        if e in enemies:
-                            enemies.remove(e)
-                    else:
-                        game_state = STATE_GAMEOVER
-
-            for b in bullets:
-                b.draw(screen)
-            for line in active_laser_lines:
-                line.draw(screen, cur_time)
-            for e in enemies:
-                e.draw(screen)
-            player.draw(screen)
-
-            sc_txt = FONT_M.render(f"SCORE: {score}", True, COLOR_WHITE)
-            screen.blit(sc_txt, (20, 20))
-
-            # 스킬 게이지 HUD
-            gx, gy, gw, gh = SCREEN_WIDTH - 150, 20, 130, 14
-            pygame.draw.rect(screen, COLOR_GRAY, (gx, gy, gw, gh), border_radius=3)
-            cur_gw = int(gw * min(1.0, skill_gauge / CONFIG["MAX_SKILL_GAUGE"]))
-            pygame.draw.rect(screen, COLOR_CYAN, (gx, gy, cur_gw, gh), border_radius=3)
-            g_lbl = FONT_LIST.render("SKILL GAUGE", True, COLOR_CYAN)
-            screen.blit(g_lbl, (gx, gy + 18))
-
-            if skill_gauge >= CONFIG["MAX_SKILL_GAUGE"]:
-                skill_gauge = 0.0
-                trigger_slot_screen()
-
-        elif game_state == STATE_SLOT:
-            # 1) 상단 옵션 리스트 및 확률 표시
-            title = FONT_L.render("ALL ENEMIES CLEARED!", True, COLOR_MAGENTA)
-            screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 40))
-
-            list_box = pygame.Rect(30, 85, SCREEN_WIDTH - 60, 175)
-            pygame.draw.rect(screen, (15, 20, 38), list_box, border_radius=8)
-            pygame.draw.rect(screen, COLOR_CYAN, list_box, 1, border_radius=8)
-
-            hdr = FONT_S.render("[ AVAILABLE OPTIONS & PROBABILITY ]", True, COLOR_CYAN)
-            screen.blit(hdr, (list_box.centerx - hdr.get_width() // 2, 95))
-
-            for idx, item in enumerate(slot_active_pool):
-                row_y = 120 + idx * 22
-                prob_str = f"({item['prob']:.1f}%)"
-                
-                # 3) 당첨된 능력치는 상단 리스트에서 하이라이트 표시
-                if slot_is_selected and item["code"] == slot_picked_code:
-                    txt_color = COLOR_YELLOW
-                    prefix = "▶ "
-                else:
-                    txt_color = (180, 190, 215)
-                    prefix = "• "
-
-                opt_surf = FONT_LIST.render(f"{prefix}{item['label']}", True, txt_color)
-                prob_surf = FONT_LIST.render(prob_str, True, txt_color)
-                screen.blit(opt_surf, (45, row_y))
-                screen.blit(prob_surf, (SCREEN_WIDTH - 45 - prob_surf.get_width(), row_y))
-
-            # 2) 슬롯 애니메이션 및 자동/수동 선택 처리
-            slot_elapsed = cur_time - slot_start_time
-
-            # 5초 초과 시 자동 선택
-            if not slot_is_selected and slot_elapsed >= CONFIG["SLOT_AUTO_PICK_TIMEOUT"] and len(slot_active_pool) > 0:
-                slot_is_selected = True
-                slot_pick_time = cur_time
-                slot_picked_code, slot_picked_label = pick_slot_reward()
-
-            slot_box = pygame.Rect(45, 330, SCREEN_WIDTH - 90, 100)
-            pygame.draw.rect(screen, (22, 28, 55), slot_box, border_radius=12)
-
-            if not slot_is_selected:
-                slot_anim_idx = int(slot_elapsed / CONFIG["SLOT_CYCLE_INTERVAL"]) % len(slot_active_pool)
-                current_display = slot_active_pool[slot_anim_idx]["label"]
-                pygame.draw.rect(screen, COLOR_YELLOW, slot_box, 3, border_radius=12)
-
-                guide = FONT_M.render("TAP / CLICK ANYWHERE TO STOP!", True, COLOR_CYAN)
-                screen.blit(guide, (SCREEN_WIDTH // 2 - guide.get_width() // 2, 455))
-
-                remain_sec = max(0, int(math.ceil(CONFIG["SLOT_AUTO_PICK_TIMEOUT"] - slot_elapsed)))
-                auto_guide = FONT_S.render(f"AUTO-PICK IN {remain_sec}s, GAME STARTS", True, COLOR_YELLOW)
-                screen.blit(auto_guide, (SCREEN_WIDTH // 2 - auto_guide.get_width() // 2, 485))
-            else:
-                # 3) 선택 완료 상태 (2초간 유지 후 인게임 복귀)
-                current_display = slot_picked_label
-                pygame.draw.rect(screen, COLOR_GREEN, slot_box, 4, border_radius=12)
-
-                chosen_lbl = FONT_L.render("SELECTED!", True, COLOR_GREEN)
-                screen.blit(chosen_lbl, (SCREEN_WIDTH // 2 - chosen_lbl.get_width() // 2, 460))
-
-                if cur_time - slot_pick_time >= CONFIG["SLOT_RESULT_DISPLAY_TIME"]:
-                    apply_slot_reward(slot_picked_code)
-                    game_state = STATE_BATTLE
-
-            disp_surf = FONT_M.render(current_display, True, COLOR_WHITE)
-            screen.blit(disp_surf, (slot_box.centerx - disp_surf.get_width() // 2, slot_box.centery - disp_surf.get_height() // 2))
-
-        elif game_state == STATE_GAMEOVER:
-            go_txt = FONT_L.render("GAME OVER", True, COLOR_MAGENTA)
-            sc_txt = FONT_M.render(f"FINAL SCORE: {score}", True, COLOR_YELLOW)
-            re_txt = FONT_S.render("CLICK ANYWHERE TO RESTART", True, COLOR_CYAN)
-            screen.blit(go_txt, (SCREEN_WIDTH // 2 - go_txt.get_width() // 2, 300))
-            screen.blit(sc_txt, (SCREEN_WIDTH // 2 - sc_txt.get_width() // 2, 350))
-            screen.blit(re_txt, (SCREEN_WIDTH // 2 - re_txt.get_width() // 2, 410))
-
-        ver_txt = FONT_VER.render(VERSION_STR, True, COLOR_VERSION_DIM)
-        screen.blit(ver_txt, (10, SCREEN_HEIGHT - 20))
-
-        pygame.display.flip()
-        await asyncio.sleep(0)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Neon Flight: Overdrive - v20261005.006</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body {
+      background: #080814;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #gameCanvas {
+      background: #080814;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      max-width: 450px;
+      max-height: 800px;
+      aspect-ratio: 450 / 800;
+      box-shadow: 0 0 25px rgba(0, 245, 255, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="450" height="800"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const CONFIG = {
+      BASE_PLAYER_SPEED: 5.2,
+      BASE_FIRE_INTERVAL: 0.405,
+      FIRE_RATE_REDUCTION: 0.05,
+      LASER_WEAPON_INTERVAL: 1.0,
+      LASER_WEAPON_DURATION: 30.5,
+      LASER_BEAM_LINGER_TIME: 0.2,
+      CLONE_SHIP_DURATION: 30.0,
+      SHIELD_DURATION: 30.0,
+      MAX_SKILL_GAUGE: 100.0,
+      GAUGE_PER_KILL: 14.0,
+      SLOT_CYCLE_INTERVAL: 0.22,
+      SLOT_AUTO_PICK_TIMEOUT: 5.0,
+      SLOT_RESULT_DISPLAY_TIME: 2.0
+    };
+
+    const VERSION_STR = "v20261005.006";
+    const STATE_SELECT = 0, STATE_BATTLE = 1, STATE_SLOT = 2, STATE_GAMEOVER = 3;
+    let gameState = STATE_SELECT;
+
+    // 슬롯 기본 옵션 및 가중치
+    const RAW_SLOT_OPTIONS = [
+      { code: "POWER_UP", label: "POWER UP (+1)", weight: 30 },
+      { code: "SPEED_UP", label: "SPEED UP (+1)", weight: 30 },
+      { code: "FIRE_RATE", label: "FIRING RATE (+1)", weight: 30 },
+      { code: "SHIELD", label: "SHIELD (30s)", weight: 15 },
+      { code: "LASER_WEAPON", label: "LASER WEAPON (30.5s)", weight: 15 },
+      { code: "CLONE_SHIP", label: "CLONE SHIP (30s)", weight: 10 }
+    ];
+
+    let stars = Array.from({ length: 65 }, () => ({
+      x: Math.random() * 450,
+      y: Math.random() * 800,
+      speed: 0.6 + Math.random() * 1.6,
+      size: Math.random() < 0.6 ? 1 : 2,
+      alpha: 0.3 + Math.random() * 0.7
+    }));
+
+    let player = null;
+    let bullets = [], enemies = [], laserLines = [];
+    let score = 0, skillGauge = 0, lastSpawnTime = 0;
+    let slotActivePool = [], slotStartTime = 0, slotPickedItem = null, slotPickTime = 0, slotIsSelected = false;
+
+    function resetBattle(pType) {
+      player = {
+        type: pType,
+        x: 225,
+        y: 650,
+        tx: 225,
+        ty: 650,
+        r: 22,
+        power: pType === 1 ? 3 : 1,
+        speed: pType === 0 ? 3 : 1,
+        fireRate: pType === 2 ? 3 : 1,
+        cloneTimer: 0,
+        laserTimer: 0,
+        lastLaser: 0,
+        shieldTimer: 0,
+        lastShot: 0,
+        isAlive: true
+      };
+      bullets = [];
+      enemies = [];
+      laserLines = [];
+      score = 0;
+      skillGauge = 0;
+      lastSpawnTime = performance.now() / 1000;
+      gameState = STATE_BATTLE;
+    }
+
+    function calculateSlotPool() {
+      let pool = RAW_SLOT_OPTIONS.filter(opt => {
+        if (opt.code === "CLONE_SHIP" && player.cloneTimer > 0) return false;
+        if (opt.code === "POWER_UP" && player.power >= 10) return false;
+        if (opt.code === "SPEED_UP" && player.speed >= 10) return false;
+        if (opt.code === "FIRE_RATE" && player.fireRate >= 10) return false;
+        return true;
+      });
+
+      if (pool.length === 0) {
+        pool = [
+          { code: "SHIELD", label: "SHIELD (30s)", weight: 50 },
+          { code: "LASER_WEAPON", label: "LASER WEAPON (30.5s)", weight: 50 }
+        ];
+      }
+
+      const totalWeight = pool.reduce((acc, cur) => acc + cur.weight, 0);
+      pool.forEach(item => {
+        item.prob = ((item.weight / totalWeight) * 100).toFixed(1);
+      });
+      return pool;
+    }
+
+    function openSlotMachine() {
+      enemies = [];
+      laserLines = [];
+      slotActivePool = calculateSlotPool();
+      slotStartTime = performance.now() / 1000;
+      slotIsSelected = false;
+      slotPickedItem = null;
+      gameState = STATE_SLOT;
+    }
+
+    function pickRandomReward() {
+      const totalWeight = slotActivePool.reduce((acc, cur) => acc + cur.weight, 0);
+      let rand = Math.random() * totalWeight;
+      for (let item of slotActivePool) {
+        if (rand < item.weight) return item;
+        rand -= item.weight;
+      }
+      return slotActivePool[0];
+    }
+
+    function applySlotReward(code) {
+      if (code === "POWER_UP") player.power = Math.min(10, player.power + 1);
+      else if (code === "SPEED_UP") player.speed = Math.min(10, player.speed + 1);
+      else if (code === "FIRE_RATE") player.fireRate = Math.min(10, player.fireRate + 1);
+      else if (code === "CLONE_SHIP") player.cloneTimer = CONFIG.CLONE_SHIP_DURATION;
+      else if (code === "LASER_WEAPON") {
+        player.laserTimer = CONFIG.LASER_WEAPON_DURATION;
+        player.lastLaser = performance.now() / 1000;
+      } else if (code === "SHIELD") player.shieldTimer = CONFIG.SHIELD_DURATION;
+    }
+
+    // 마우스 및 터치 이벤트
+    function handlePointer(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (clientX - rect.left) * scaleX;
+      const y = (clientY - rect.top) * scaleY;
+
+      if (gameState === STATE_SELECT) {
+        if (y >= 220 && y <= 300) resetBattle(0);
+        else if (y >= 340 && y <= 420) resetBattle(1);
+        else if (y >= 460 && y <= 540) resetBattle(2);
+      } else if (gameState === STATE_BATTLE) {
+        player.tx = x;
+        player.ty = y - 60;
+      } else if (gameState === STATE_SLOT) {
+        if (!slotIsSelected && slotActivePool.length > 0) {
+          slotIsSelected = true;
+          slotPickTime = performance.now() / 1000;
+          slotPickedItem = pickRandomReward();
+        }
+      } else if (gameState === STATE_GAMEOVER) {
+        gameState = STATE_SELECT;
+      }
+    }
+
+    canvas.addEventListener("mousedown", e => handlePointer(e.clientX, e.clientY));
+    canvas.addEventListener("mousemove", e => {
+      if (gameState === STATE_BATTLE && e.buttons === 1) handlePointer(e.clientX, e.clientY);
+    });
+    canvas.addEventListener("touchstart", e => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handlePointer(touch.clientX, touch.clientY);
+    }, { passive: false });
+    canvas.addEventListener("touchmove", e => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handlePointer(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    function drawPixelShip(cx, cy, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(cx - 4, cy - 18, 8, 36);
+      ctx.fillRect(cx - 16, cy + 4, 32, 8);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(cx - 2, cy - 10, 4, 12);
+    }
+
+    let lastFrameTime = performance.now() / 1000;
+
+    function gameLoop() {
+      const now = performance.now() / 1000;
+      const dt = Math.min(0.1, now - lastFrameTime);
+      lastFrameTime = now;
+
+      // 배경 업데이트
+      stars.forEach(st => {
+        st.y += st.speed;
+        if (st.y > 800) { st.y = 0; st.x = Math.random() * 450; }
+      });
+
+      // 렌더링 기본 초기화
+      ctx.fillStyle = "#080814";
+      ctx.fillRect(0, 0, 450, 800);
+
+      stars.forEach(st => {
+        ctx.fillStyle = `rgba(180, 210, 255, ${st.alpha})`;
+        ctx.fillRect(st.x, st.y, st.size, st.size);
+      });
+
+      if (gameState === STATE_SELECT) {
+        ctx.fillStyle = "#00f5ff";
+        ctx.font = "bold 26px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("NEON FLIGHT: OVERDRIVE", 225, 100);
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("CHOOSE YOUR FIGHTER", 225, 140);
+
+        const cards = [
+          { name: "1. SPEED FIGHTER", y: 220, sub: "SPD 3 | PWR 1 | RATE 1" },
+          { name: "2. POWER FIGHTER", y: 340, sub: "PWR 3 | SPD 1 | RATE 1" },
+          { name: "3. TWIN FIGHTER",  y: 460, sub: "RATE 3 | PWR 1 | SPD 1" }
+        ];
+
+        cards.forEach(card => {
+          ctx.fillStyle = "#151b2e";
+          ctx.fillRect(40, card.y, 370, 80);
+          ctx.strokeStyle = "#00f5ff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(40, card.y, 370, 80);
+
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 18px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(card.name, 225, card.y + 35);
+          ctx.fillStyle = "#ffd200";
+          ctx.font = "13px sans-serif";
+          ctx.fillText(card.sub, 225, card.y + 60);
+        });
+
+      } else if (gameState === STATE_BATTLE) {
+        // 타이머 감소
+        if (player.cloneTimer > 0) player.cloneTimer = Math.max(0, player.cloneTimer - dt);
+        if (player.laserTimer > 0) player.laserTimer = Math.max(0, player.laserTimer - dt);
+        if (player.shieldTimer > 0) player.shieldTimer = Math.max(0, player.shieldTimer - dt);
+
+        // 이동 처리
+        const dx = player.tx - player.x;
+        const dy = player.ty - player.y;
+        const dist = Math.hypot(dx, dy);
+        const moveStep = (CONFIG.BASE_PLAYER_SPEED + player.speed * 0.7) * 60 * dt;
+        if (dist > 1) {
+          player.x += (dx / dist) * Math.min(dist, moveStep);
+          player.y += (dy / dist) * Math.min(dist, moveStep);
+        }
+
+        // 총알 발사
+        const fireInterval = Math.max(0.08, CONFIG.BASE_FIRE_INTERVAL - player.fireRate * CONFIG.FIRE_RATE_REDUCTION);
+        if (now - player.lastShot >= fireInterval) {
+          player.lastShot = now;
+          if (player.type === 2) {
+            bullets.push({ x: player.x - 12, y: player.y - 18, vx: 0, vy: -15, dmg: player.power });
+            bullets.push({ x: player.x + 12, y: player.y - 18, vx: 0, vy: -15, dmg: player.power });
+          } else {
+            bullets.push({ x: player.x, y: player.y - 20, vx: 0, vy: -16, dmg: player.power });
+          }
+          if (player.cloneTimer > 0) {
+            bullets.push({ x: player.x + 40, y: player.y - 20, vx: 0, vy: -16, dmg: player.power });
+          }
+        }
+
+        // 레이저 발사
+        if (player.laserTimer > 0 && now - player.lastLaser >= CONFIG.LASER_WEAPON_INTERVAL) {
+          player.lastLaser = now;
+          if (enemies.length > 0) {
+            let target = enemies[0];
+            let minDist = Math.hypot(target.x - player.x, target.y - player.y);
+            enemies.forEach(e => {
+              let d = Math.hypot(e.x - player.x, e.y - player.y);
+              if (d < minDist) { minDist = d; target = e; }
+            });
+
+            laserLines.push({ sx: player.x, sy: player.y - 15, ex: target.x, ey: target.y, birth: now });
+            enemies = enemies.filter(e => e !== target);
+            score++;
+            skillGauge += CONFIG.GAUGE_PER_KILL;
+          }
+        }
+
+        // 스폰
+        if (now - lastSpawnTime >= 0.75) {
+          lastSpawnTime = now;
+          enemies.push({
+            x: 40 + Math.random() * 370,
+            y: -30,
+            speed: 3.2 + Math.random() * 1.6,
+            hp: 3,
+            r: 18
+          });
+        }
+
+        // 탄환 업데이트
+        bullets.forEach(b => { b.y += b.vy; });
+        bullets = bullets.filter(b => b.y > -20);
+
+        // 적 업데이트 및 피격
+        enemies.forEach(e => {
+          e.y += e.speed;
+          bullets.forEach(b => {
+            if (Math.hypot(b.x - e.x, b.y - e.y) < e.r + 4) {
+              e.hp -= b.dmg;
+              b.y = -100;
+              if (e.hp <= 0) {
+                score++;
+                skillGauge += CONFIG.GAUGE_PER_KILL;
+              }
+            }
+          });
+
+          // 플레이어 충돌
+          if (Math.hypot(player.x - e.x, player.y - e.y) < player.r + e.r) {
+            if (player.shieldTimer > 0) {
+              player.shieldTimer = 0;
+              e.hp = 0;
+            } else {
+              gameState = STATE_GAMEOVER;
+            }
+          }
+        });
+
+        enemies = enemies.filter(e => e.hp > 0 && e.y < 840);
+
+        // 총알 그리기
+        ctx.fillStyle = "#ffe600";
+        bullets.forEach(b => {
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // 레이저 라인 그리기 (0.2초 잔존)
+        laserLines = laserLines.filter(l => now - l.birth < CONFIG.LASER_BEAM_LINGER_TIME);
+        laserLines.forEach(l => {
+          const alpha = 1.0 - (now - l.birth) / CONFIG.LASER_BEAM_LINGER_TIME;
+          ctx.strokeStyle = `rgba(0, 245, 255, ${alpha})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(l.sx, l.sy);
+          ctx.lineTo(l.ex, l.ey);
+          ctx.stroke();
+        });
+
+        // 적 그리기
+        enemies.forEach(e => {
+          ctx.fillStyle = "#ff2860";
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // 플레이어 그리기
+        drawPixelShip(player.x, player.y, "#00f5ff");
+        if (player.cloneTimer > 0) drawPixelShip(player.x + 40, player.y, "#00f5ff");
+        if (player.shieldTimer > 0) {
+          ctx.strokeStyle = "#32ff78";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(player.x, player.y, player.r + 10, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // HUD
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`SCORE: ${score}`, 20, 35);
+
+        // 스킬 게이지 바
+        ctx.fillStyle = "#505064";
+        ctx.fillRect(280, 20, 150, 16);
+        const gw = Math.min(1.0, skillGauge / CONFIG.MAX_SKILL_GAUGE) * 150;
+        ctx.fillStyle = "#00f5ff";
+        ctx.fillRect(280, 20, gw, 16);
+        ctx.font = "11px sans-serif";
+        ctx.fillText("SKILL GAUGE", 280, 50);
+
+        if (skillGauge >= CONFIG.MAX_SKILL_GAUGE) {
+          skillGauge = 0;
+          openSlotMachine();
+        }
+
+      } else if (gameState === STATE_SLOT) {
+        // 1) 슬롯머신 상단 옵션 및 실시간 확률 표기
+        ctx.fillStyle = "#ff0080";
+        ctx.font = "bold 24px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("ALL ENEMIES CLEARED!", 225, 45);
+
+        ctx.fillStyle = "#0f1426";
+        ctx.fillRect(25, 75, 400, 195);
+        ctx.strokeStyle = "#00f5ff";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(25, 75, 400, 195);
+
+        ctx.fillStyle = "#00f5ff";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText("[ AVAILABLE OPTIONS & PROBABILITY ]", 225, 96);
+
+        slotActivePool.forEach((item, idx) => {
+          const rowY = 122 + idx * 24;
+          const isSelectedTarget = slotIsSelected && slotPickedItem && slotPickedItem.code === item.code;
+
+          ctx.font = isSelectedTarget ? "bold 13px sans-serif" : "12px sans-serif";
+          ctx.fillStyle = isSelectedTarget ? "#ffe600" : "#b4c0dc";
+          ctx.textAlign = "left";
+          ctx.fillText((isSelectedTarget ? "▶ " : "• ") + item.label, 40, rowY);
+
+          ctx.textAlign = "right";
+          ctx.fillText(`(${item.prob}%)`, 410, rowY);
+        });
+
+        // 2) 슬롯 애니메이션 및 자동/수동 선택 로직
+        const elapsed = now - slotStartTime;
+        if (!slotIsSelected && elapsed >= CONFIG.SLOT_AUTO_PICK_TIMEOUT && slotActivePool.length > 0) {
+          slotIsSelected = true;
+          slotPickTime = now;
+          slotPickedItem = pickRandomReward();
+        }
+
+        ctx.fillStyle = "#161c37";
+        ctx.fillRect(45, 330, 360, 110);
+
+        if (!slotIsSelected) {
+          const curIdx = Math.floor(elapsed / CONFIG.SLOT_CYCLE_INTERVAL) % slotActivePool.length;
+          const dispText = slotActivePool[curIdx].label;
+
+          ctx.strokeStyle = "#ffe600";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(45, 330, 360, 110);
+
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 20px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(dispText, 225, 395);
+
+          ctx.fillStyle = "#00f5ff";
+          ctx.font = "bold 15px sans-serif";
+          ctx.fillText("TAP / CLICK ANYWHERE TO STOP!", 225, 470);
+
+          const remain = Math.max(0, Math.ceil(CONFIG.SLOT_AUTO_PICK_TIMEOUT - elapsed));
+          ctx.fillStyle = "#ffe600";
+          ctx.font = "13px sans-serif";
+          ctx.fillText(`AUTO-PICK IN ${remain}s, GAME STARTS`, 225, 500);
+        } else {
+          // 3) 선택 완료 상태 (2초 유지 후 복귀)
+          ctx.strokeStyle = "#32ff78";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(45, 330, 360, 110);
+
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 20px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(slotPickedItem.label, 225, 395);
+
+          ctx.fillStyle = "#32ff78";
+          ctx.font = "bold 22px sans-serif";
+          ctx.fillText("SELECTED!", 225, 475);
+
+          if (now - slotPickTime >= CONFIG.SLOT_RESULT_DISPLAY_TIME) {
+            applySlotReward(slotPickedItem.code);
+            gameState = STATE_BATTLE;
+          }
+        }
+
+      } else if (gameState === STATE_GAMEOVER) {
+        ctx.fillStyle = "#ff0080";
+        ctx.font = "bold 32px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", 225, 320);
+
+        ctx.fillStyle = "#ffe600";
+        ctx.font = "bold 20px sans-serif";
+        ctx.fillText(`FINAL SCORE: ${score}`, 225, 370);
+
+        ctx.fillStyle = "#00f5ff";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("CLICK ANYWHERE TO RESTART", 225, 430);
+      }
+
+      ctx.fillStyle = "#37374b";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(VERSION_STR, 10, 790);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
