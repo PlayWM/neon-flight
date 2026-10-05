@@ -1,1306 +1,596 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Neon Flight: Overdrive</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
-  body, html { width: 100%; height: 100%; overflow: hidden; background-color: #05050f; display: flex; justify-content: center; align-items: center; }
-  #canvas-container { position: relative; width: 100%; max-width: 450px; height: 100%; max-height: 800px; display: flex; justify-content: center; align-items: center; }
-  canvas { width: 100%; height: 100%; object-fit: contain; background: #080814; touch-action: none; }
-  #name-input-overlay { display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; }
-  #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: monospace; font-size: 14px; text-align: center; outline: none; }
-</style>
-</head>
-<body>
-<div id="canvas-container">
-  <canvas id="gameCanvas" width="450" height="800"></canvas>
-  <div id="name-input-overlay">
-    <input type="text" id="name-input" maxlength="16" placeholder="TOP 10 ENTER NAME" autocomplete="off">
-  </div>
-</div>
+# -*- coding: utf-8 -*-
+# ==========================================
+# Version: v20261005.005
+# ==========================================
 
-<script>
-// ==========================================
-// Neon Flight: Overdrive (HTML5 Web Port)
-// ==========================================
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-const nameInputOverlay = document.getElementById("name-input-overlay");
-const nameInput = document.getElementById("name-input");
+import pygame
+import random
+import sys
+import math
+import time
+import asyncio
 
-const SCREEN_WIDTH = 450;
-const SCREEN_HEIGHT = 800;
-const VERSION_STR = "v20261005.Web06";
-const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
+pygame.init()
+pygame.font.init()
 
-// --- [Web Audio API 사운드 신시사이저] ---
-let audioCtx = null;
-function initAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+try:
+    pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+except Exception:
+    pass
+
+CONFIG = {
+    "BASE_PLAYER_SPEED": 5.2,
+    "STAT_SPEED_FACTOR": 0.65,
+    "BASE_FIRE_INTERVAL": 0.405,
+    "FIRE_RATE_REDUCTION": 0.05,
+    "HIT_PROBABILITY": 0.50,
+    "TARGET_HP_PRESSURE_RATIO": 0.85,
+    "MIN_SPAWN_INTERVAL": 0.22,
+    "MAX_SPAWN_INTERVAL": 1.20,
+    "MAX_ENEMY_HP_CAP": 20,
+    "BASE_ENEMY_SPEED": 3.6,
+    "LASER_WEAPON_INTERVAL": 1.0,
+    "LASER_WEAPON_DURATION": 30.5,
+    "LASER_BEAM_LINGER_TIME": 0.2,
+    "CLONE_SHIP_DURATION": 30.0,
+    "SHIELD_DURATION": 30.0,
+    "INVINCIBLE_TIME_ON_SHIELD_BREAK": 0.6,
+    "MAX_SKILL_GAUGE": 100.0,
+    "GAUGE_PER_KILL": 14.0,
+    "SLOT_CYCLE_INTERVAL": 0.25,
+    "SLOT_AUTO_PICK_TIMEOUT": 5.0,
+    "SLOT_RESULT_DISPLAY_TIME": 2.0,
+    "POWER_DROP_SPEED": 3.6,
+    "GRAZE_DISTANCE": 32.0,
+    "GRAZE_GAUGE_BONUS": 0.5,
+    "BOSS_SPAWN_INTERVAL": 60.0
 }
 
-function playTone(freq, duration, type="sine", sweep=0, vol=0.15) {
-  if (!audioCtx) return;
-  try {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    const now = audioCtx.currentTime;
-    osc.frequency.setValueAtTime(freq, now);
-    if (sweep !== 0) osc.frequency.linearRampToValueAtTime(freq + sweep, now + duration);
-    gain.gain.setValueAtTime(vol, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(now);
-    osc.stop(now + duration);
-  } catch(e){}
+VERSION_STR = "v20261005.005"
+SCREEN_WIDTH = 450
+SCREEN_HEIGHT = 800
+FPS = 60
+
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption(f"Neon Flight: Overdrive - {VERSION_STR}")
+clock = pygame.time.Clock()
+
+COLOR_BG = (8, 8, 20)
+COLOR_CYAN = (0, 245, 255)
+COLOR_MAGENTA = (255, 0, 128)
+COLOR_YELLOW = (255, 230, 0)
+COLOR_WHITE = (255, 255, 255)
+COLOR_GRAY = (80, 80, 100)
+COLOR_GREEN = (50, 255, 120)
+COLOR_ORANGE = (255, 140, 0)
+COLOR_DARK_BLUE = (20, 25, 45)
+COLOR_RED = (255, 40, 40)
+COLOR_VERSION_DIM = (55, 55, 75)
+
+FONT_XL = pygame.font.Font(None, 34)
+FONT_L = pygame.font.Font(None, 28)
+FONT_M = pygame.font.Font(None, 20)
+FONT_S = pygame.font.Font(None, 16)
+FONT_LIST = pygame.font.Font(None, 14)
+FONT_TOP10 = pygame.font.Font(None, 14)
+FONT_VER = pygame.font.Font(None, 13)
+FONT_TIMER = pygame.font.Font(None, 14)
+
+STATE_SELECT = 0
+STATE_BATTLE = 1
+STATE_SLOT = 2
+STATE_GAMEOVER = 3
+game_state = STATE_SELECT
+
+shake_intensity = 0.0
+shake_decay = 18.0
+
+def add_screen_shake(amount):
+    global shake_intensity
+    shake_intensity = min(16.0, shake_intensity + amount)
+
+top10_list = [("ACE_PILOT", 120), ("SKY_HUNTER", 95), ("OVERDRIVE", 80)]
+
+TIER_THEMES = [
+    {"bg": (8, 8, 20), "star_tint": (180, 200, 255)},
+    {"bg": (12, 5, 24), "star_tint": (255, 180, 230)},
+    {"bg": (4, 18, 26), "star_tint": (150, 255, 240)},
+    {"bg": (24, 8, 8), "star_tint": (255, 200, 150)}
+]
+current_tier = 0
+
+class Star:
+    def __init__(self):
+        self.x = random.randint(0, SCREEN_WIDTH)
+        self.y = random.randint(0, SCREEN_HEIGHT)
+        self.speed = random.uniform(0.6, 2.2)
+        self.size = 1 if self.speed < 1.3 else 2
+        self.brightness = random.randint(70, 160)
+
+    def update(self):
+        self.y += self.speed
+        if self.y > SCREEN_HEIGHT:
+            self.y = 0
+            self.x = random.randint(0, SCREEN_WIDTH)
+
+    def draw(self, surf, tint):
+        r = int(self.brightness * (tint[0] / 255.0))
+        g = int(self.brightness * (tint[1] / 255.0))
+        b = int(self.brightness * (tint[2] / 255.0))
+        pygame.draw.circle(surf, (min(255, r), min(255, g), min(255, b)), (int(self.x), int(self.y)), self.size)
+
+stars = [Star() for _ in range(65)]
+
+def draw_pixel_matrix(surf, cx, cy, matrix, color_map, pixel_size=3):
+    rows = len(matrix)
+    cols = len(matrix[0])
+    start_x = int(cx - (cols * pixel_size) / 2)
+    start_y = int(cy - (rows * pixel_size) / 2)
+    for r_idx, row in enumerate(matrix):
+        for c_idx, val in enumerate(row):
+            if val != 0 and val in color_map:
+                col = color_map[val]
+                pygame.draw.rect(surf, col, (start_x + c_idx * pixel_size, start_y + r_idx * pixel_size, pixel_size, pixel_size))
+
+PIXEL_PLAYERS = {
+    0: [
+        [0,0,0,0,0,1,1,0,0,0,0,0],
+        [0,0,0,0,1,2,2,1,0,0,0,0],
+        [0,0,0,1,1,2,2,1,1,0,0,0],
+        [0,0,1,1,3,2,2,3,1,1,0,0],
+        [0,1,1,1,3,2,2,3,1,1,1,0],
+        [1,1,0,1,1,3,3,1,1,0,1,1],
+        [1,0,0,1,1,1,1,1,1,0,0,1],
+        [1,0,1,1,1,4,4,1,1,1,0,1],
+        [0,0,1,0,4,0,0,4,0,1,0,0]
+    ],
+    1: [
+        [0,0,0,1,1,1,1,1,1,0,0,0],
+        [0,0,1,1,2,2,2,2,1,1,0,0],
+        [0,1,1,2,3,3,3,3,2,1,1,0],
+        [1,1,1,1,3,3,3,3,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,0,1,1,1,1,1,1,0,1,1],
+        [1,0,0,1,1,1,1,1,1,0,0,1],
+        [1,1,1,1,4,1,1,4,1,1,1,1],
+        [0,1,0,4,4,0,0,4,4,0,1,0]
+    ],
+    2: [
+        [1,1,0,0,0,1,1,0,0,0,1,1],
+        [1,2,1,0,1,2,2,1,0,1,2,1],
+        [1,2,1,0,1,3,3,1,0,1,2,1],
+        [1,1,1,1,1,3,3,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,1,1,1,0,0,1,1,1,0,1],
+        [1,0,4,0,0,0,0,0,0,4,0,1]
+    ]
 }
 
-function playExplosionSound() {
-  if (!audioCtx) return;
-  try {
-    const now = audioCtx.currentTime;
-    const dur = 0.25;
-    const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * dur), audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < buf.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / buf.length);
-    const src = audioCtx.createBufferSource();
-    const gain = audioCtx.createGain();
-    src.buffer = buf;
-    gain.gain.setValueAtTime(0.25, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    src.connect(gain);
-    gain.connect(audioCtx.destination);
-    src.start(now);
-  } catch(e){}
-}
-
-// --- [게임 설정 & 밸런스] ---
-const CONFIG = {
-  BASE_PLAYER_SPEED: 4.16,
-  STAT_SPEED_FACTOR: 0.65,
-  BASE_FIRE_INTERVAL: 0.405,
-  FIRE_RATE_REDUCTION: 0.05,
-  HIT_PROBABILITY: 0.50,
-  TARGET_HP_PRESSURE_RATIO: 0.85,
-  MIN_SPAWN_INTERVAL: 0.10,
-  MAX_SPAWN_INTERVAL: 0.60,
-  MAX_ENEMY_HP_CAP: 30,
-  BASE_ENEMY_SPEED: 3.6,
-  LASER_WEAPON_INTERVAL: 1.0,
-  LASER_WEAPON_DURATION: 30.5,
-  LASER_BEAM_LINGER_TIME: 0.2,
-  CLONE_SHIP_DURATION: 30.0,
-  SHIELD_DURATION: 30.0,
-  MAX_SKILL_GAUGE: 100.0,
-  // 1) 스킬 게이지 충전량 30% 증가 (2.0 -> 2.6)
-  BASE_GAUGE_PER_KILL: 2.6,
-  MIN_GAUGE_PER_KILL: 0.65,
-  GAUGE_BOOST_DURATION: 20.0,
-  SLOT_CYCLE_INTERVAL: 0.105,
-  SLOT_AUTO_PICK_TIMEOUT: 5.0,
-  SLOT_RESULT_DISPLAY_TIME: 2.0
-};
-
-// 도트 매트릭스
-const PIXEL_PLAYERS = {
-  0: [[0,0,0,0,0,1,1,0,0,0,0,0],[0,0,0,0,1,2,2,1,0,0,0,0],[0,0,0,1,1,2,2,1,1,0,0,0],[0,0,1,1,3,2,2,3,1,1,0,0],[0,1,1,1,3,2,2,3,1,1,1,0],[1,1,0,1,1,3,3,1,1,0,1,1],[1,0,0,1,1,1,1,1,1,0,0,1],[1,0,1,1,1,4,4,1,1,1,0,1],[0,0,1,0,4,0,0,4,0,1,0,0]],
-  1: [[0,0,0,1,1,1,1,1,1,0,0,0],[0,0,1,1,2,2,2,2,1,1,0,0],[0,1,1,2,3,3,3,3,2,1,1,0],[1,1,1,1,3,3,3,3,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,0,1,1,1,1,1,1,0,1,1],[1,0,0,1,1,1,1,1,1,0,0,1],[1,1,1,1,4,1,1,4,1,1,1,1],[0,1,0,4,4,0,0,4,4,0,1,0]],
-  2: [[1,1,0,0,0,1,1,0,0,0,1,1],[1,2,1,0,1,2,2,1,0,1,2,1],[1,2,1,0,1,3,3,1,0,1,2,1],[1,1,1,1,1,3,3,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1],[1,0,1,1,1,0,0,1,1,1,0,1],[1,0,4,0,0,0,0,0,0,4,0,1]],
-  3: [[0,0,0,1,1,0,0,1,1,0,0,0],[0,0,1,2,2,1,1,2,2,1,0,0],[0,1,2,3,3,2,2,3,3,2,1,0],[1,1,3,3,3,3,3,3,3,3,1,1],[1,2,1,1,2,2,2,2,1,1,2,1],[0,1,0,1,4,4,4,4,1,0,1,0],[0,0,0,1,4,0,0,4,1,0,0,0]],
-  4: [[0,0,0,0,1,2,2,1,0,0,0,0],[0,0,0,1,3,2,2,3,1,0,0,0],[0,0,1,3,4,4,4,4,3,1,0,0],[0,1,1,4,4,2,2,4,4,1,1,0],[1,1,3,4,2,2,2,2,4,3,1,1],[1,3,4,4,4,4,4,4,4,4,3,1],[1,1,0,1,3,4,4,3,1,0,1,1],[0,0,1,1,0,4,4,0,1,1,0,0],[0,0,1,0,0,4,4,0,0,1,0,0]]
-};
-
-const PIXEL_ENEMIES = [
-  [[0,0,1,1,1,1,0,0],[0,1,2,2,2,2,1,0],[1,1,3,2,2,3,1,1],[1,1,1,1,1,1,1,1],[1,0,1,0,0,1,0,1]],
-  [[0,0,0,1,1,0,0,0],[0,0,1,2,2,1,0,0],[0,1,2,3,3,2,1,0],[1,2,3,3,3,3,2,1],[0,1,2,3,3,2,1,0]],
-  [[1,0,0,0,0,0,0,1],[1,1,0,0,0,0,1,1],[1,1,1,0,0,1,1,1],[0,1,2,1,1,2,1,0],[0,0,1,2,2,1,0,0]],
-  [[1,1,1,1,1,1,1,1],[1,2,2,2,2,2,2,1],[1,3,1,2,2,1,3,1],[1,2,2,2,2,2,2,1]],
-  [[1,0,0,0,1],[1,1,0,1,1],[1,2,1,2,1],[1,3,1,3,1],[1,1,1,1,1]],
-  [[0,1,1,1,1,1,1,0],[1,1,2,2,2,2,1,1],[1,3,1,2,2,1,3,1],[1,1,1,1,1,1,1,1]],
-  [[0,0,0,1,1,0,0,0],[0,0,1,2,2,1,0,0],[0,1,1,3,3,1,1,0],[1,1,1,1,1,1,1,1]],
-  [[1,0,0,0,0,1],[1,1,1,1,1,1],[0,1,2,2,1,0],[0,1,3,3,1,0],[1,1,1,1,1,1]],
-  [[0,0,1,1,0,0],[0,1,2,2,1,0],[1,2,3,3,2,1],[0,1,2,2,1,0],[0,0,1,1,0,0]],
-  [[1,1,0,0,0,0,1,1],[1,2,1,1,1,1,2,1],[1,3,2,2,2,2,3,1],[1,2,2,2,2,2,2,1]]
-];
-
-const PIXEL_BOSS = [
-  [0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0],[0,0,0,1,1,2,1,0,0,1,2,1,1,0,0,0],[0,0,1,1,2,2,2,1,1,2,2,2,1,1,0,0],
-  [0,1,1,3,3,2,2,3,3,2,2,3,3,1,1,0],[1,1,2,3,3,2,2,3,3,2,2,3,3,2,1,1],[1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-  [1,1,1,2,2,4,4,4,4,4,4,2,2,1,1,1],[0,1,1,1,4,4,4,4,4,4,4,4,1,1,1,0],[0,0,1,1,1,4,4,4,4,4,4,1,1,1,0,0]
-];
-
-function drawMatrix(matrix, cx, cy, colorMap, psize=3) {
-  const rows = matrix.length;
-  const cols = matrix[0].length;
-  const startX = Math.floor(cx - (cols * psize) / 2);
-  const startY = Math.floor(cy - (rows * psize) / 2);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const v = matrix[r][c];
-      if (v !== 0 && colorMap[v]) {
-        ctx.fillStyle = colorMap[v];
-        ctx.fillRect(startX + c * psize, startY + r * psize, psize, psize);
-      }
-    }
-  }
-}
-
-// --- [엔티티 클래스] ---
-class Star {
-  constructor() {
-    this.x = Math.random() * SCREEN_WIDTH;
-    this.y = Math.random() * SCREEN_HEIGHT;
-    this.speed = 0.6 + Math.random() * 1.6;
-    this.size = this.speed < 1.3 ? 1 : 2;
-    this.b = Math.floor(70 + Math.random() * 90);
-  }
-  update() {
-    this.y += this.speed;
-    if (this.y > SCREEN_HEIGHT) { this.y = 0; this.x = Math.random() * SCREEN_WIDTH; }
-  }
-  draw() {
-    ctx.fillStyle = `rgb(${this.b}, ${this.b}, ${this.b + 50})`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-class ExplosionFX {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.color = color || "#ffe600";
-    this.type = Math.floor(Math.random() * 5);
-    this.life = 1.0;
-    this.decay = 2.5 + Math.random() * 1.5;
-    this.elements = [];
-
-    if (this.type === 0) {
-      for (let i = 0; i < 12; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 3 + Math.random() * 4;
-        this.elements.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, r: 3 + Math.random() * 3 });
-      }
-    } else if (this.type === 1) {
-      this.elements.push({ r: 4, maxR: 32, width: 3 });
-    } else if (this.type === 2) {
-      const angles = [Math.PI/4, 3*Math.PI/4, 5*Math.PI/4, 7*Math.PI/4];
-      angles.forEach(ang => {
-        const spd = 4 + Math.random() * 3;
-        this.elements.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, r: 4 });
-      });
-    } else if (this.type === 3) {
-      for (let i = 0; i < 16; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 5 + Math.random() * 5;
-        this.elements.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, r: 2 });
-      }
-    } else {
-      for (let i = 0; i < 8; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 2 + Math.random() * 3;
-        this.elements.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, s: 4 + Math.random() * 3 });
-      }
-    }
-  }
-  update(dt) {
-    this.life -= this.decay * dt;
-    if (this.type === 0 || this.type === 2 || this.type === 3) {
-      this.elements.forEach(el => {
-        el.x += el.vx * (dt * 60);
-        el.y += el.vy * (dt * 60);
-        el.r = Math.max(0, el.r - dt * 2);
-      });
-    } else if (this.type === 1) {
-      this.elements[0].r += 65 * dt;
-    } else if (this.type === 4) {
-      this.elements.forEach(el => {
-        el.x += el.vx * (dt * 60);
-        el.y += el.vy * (dt * 60);
-      });
-    }
-  }
-  draw() {
-    if (this.life <= 0) return;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, this.life));
-    ctx.fillStyle = this.color;
-    ctx.strokeStyle = this.color;
-
-    if (this.type === 0 || this.type === 2 || this.type === 3) {
-      this.elements.forEach(el => {
-        if (el.r > 0) {
-          ctx.beginPath();
-          ctx.arc(el.x, el.y, el.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
-    } else if (this.type === 1) {
-      const el = this.elements[0];
-      ctx.lineWidth = el.width;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, el.r, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (this.type === 4) {
-      this.elements.forEach(el => {
-        ctx.fillRect(el.x - el.s / 2, el.y - el.s / 2, el.s, el.s);
-      });
-    }
-    ctx.restore();
-  }
-}
-
-class BossDropItem {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.radius = 16;
-    this.speed = 2.2;
-    this.spawnTime = performance.now() / 1000;
-  }
-  getType(curTime) {
-    const elapsed = curTime - this.spawnTime;
-    const idx = Math.floor(elapsed) % 3;
-    return ["P", "S", "D"][idx];
-  }
-  update(dt) {
-    this.y += this.speed * (dt * 60);
-  }
-  draw(curTime) {
-    const type = this.getType(curTime);
-    const pulse = Math.sin(curTime * 10) * 3;
-    const r = this.radius + pulse;
-
-    ctx.fillStyle = "rgba(255, 215, 0, 0.4)";
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, r + 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = type === "P" ? "#ff0080" : (type === "S" ? "#00f5ff" : "#ffe600");
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 15px Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(type, this.x, this.y);
-  }
-}
-
-class Bullet {
-  constructor(x, y, vx, vy, dmg, radius=4, color="#ffe600", splash=false) {
-    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
-    this.dmg = dmg; this.radius = radius; this.color = color;
-    this.splash = splash;
-  }
-  update(dt) { this.x += this.vx * (dt * 60); this.y += this.vy * (dt * 60); }
-  draw() {
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-class Enemy {
-  constructor(maxHp, baseSpeed, designId) {
-    this.originX = 40 + Math.random() * (SCREEN_WIDTH - 80);
-    this.x = this.originX;
-    this.y = -40;
-    this.maxHp = maxHp;
-    this.hp = maxHp;
-    this.speed = baseSpeed * (0.75 + Math.random() * 0.7);
-    this.patternType = ["STRAIGHT", "SINE", "SMOOTH_CURVE", "DIVE", "ZIGZAG"][Math.floor(Math.random() * 5)];
-    this.sinePhase = Math.random() * Math.PI * 2;
-    this.sineAmp = 55 + Math.random() * 65;
-    this.sineFreq = 2.5 + Math.random() * 2.3;
-    this.curveVx = (Math.random() < 0.5 ? -1 : 1) * (2.2 + Math.random() * 2.0);
-    this.curveTimer = 0.4 + Math.random() * 0.6;
-    this.diveTriggered = false;
-    this.designId = designId;
-    this.radius = maxHp <= 8 ? 20 : (maxHp <= 18 ? 25 : 30);
-    this.hasShield = Math.random() < 0.03;
-  }
-  // 2) 60초 동안 좌우 움직임 폭 50% 축소 (widthScale)
-  update(dt, elapsed, speedScale=1.0, widthScale=1.0) {
-    const effSpeed = this.speed * speedScale;
-    const step = dt * 60 * speedScale;
-    if (this.patternType === "DIVE") {
-      if (!this.diveTriggered && this.y > 180) { this.diveTriggered = true; this.speed *= 1.8; }
-      this.y += effSpeed * (dt * 60);
-      this.x += Math.sin(elapsed * 5.0) * (1.5 * step * widthScale);
-    } else if (this.patternType === "ZIGZAG") {
-      this.y += (effSpeed * 0.9) * (dt * 60);
-      this.x += (this.curveVx * widthScale) * step;
-      if (this.x <= this.radius + 5 || this.x >= SCREEN_WIDTH - this.radius - 5) this.curveVx *= -1;
-    } else if (this.patternType === "SINE") {
-      this.y += effSpeed * (dt * 60);
-      this.x = this.originX + Math.sin(elapsed * this.sineFreq + this.sinePhase) * (this.sineAmp * widthScale);
-    } else if (this.patternType === "SMOOTH_CURVE") {
-      this.y += effSpeed * (dt * 60);
-      this.curveTimer -= dt;
-      if (this.curveTimer <= 0) { this.curveVx = (Math.random() * 7) - 3.5; this.curveTimer = 0.5 + Math.random() * 0.7; }
-      this.x += (this.curveVx * widthScale) * step;
-    } else {
-      this.y += (effSpeed * 1.15) * (dt * 60);
-    }
-    this.x = Math.max(this.radius, Math.min(SCREEN_WIDTH - this.radius, this.x));
-  }
-  draw(curTime) {
-    const matrix = PIXEL_ENEMIES[this.designId % PIXEL_ENEMIES.length];
-    const cmap = { 1: "#ff3c64", 2: "#00f5ff", 3: "#ffe600" };
-    drawMatrix(matrix, this.x, this.y, cmap, this.maxHp <= 12 ? 4 : 5);
-
-    if (this.hasShield) {
-      const pulse = Math.sin(curTime * 12.0) * 3;
-      ctx.strokeStyle = "#00f5ff";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 8 + pulse, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    const barW = Math.floor(this.radius * 1.4);
-    const hpW = Math.floor(barW * Math.max(0, this.hp / this.maxHp));
-    ctx.fillStyle = "#505064";
-    ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, barW, 3);
-    ctx.fillStyle = "#32ff78";
-    ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, hpW, 3);
-  }
-}
-
-class BossEnemy {
-  constructor() {
-    this.x = SCREEN_WIDTH / 2;
-    this.y = -80;
-    this.targetY = 110;
-    this.maxHp = 20;
-    this.hp = 20;
-    this.radius = 48;
-    this.isFullyEntered = false;
-    this.vx = 2.0;
-    this.lastFireTime = 0.0;
-  }
-  update(dt, curTime, missiles) {
-    if (!this.isFullyEntered) {
-      this.y += 1.8 * (dt * 60);
-      if (this.y >= this.targetY) { this.y = this.targetY; this.isFullyEntered = true; this.lastFireTime = curTime; }
-    } else {
-      this.x += this.vx * (dt * 60);
-      if (this.x <= this.radius + 15 || this.x >= SCREEN_WIDTH - this.radius - 15) this.vx *= -1;
-      if (curTime - this.lastFireTime >= 3.0) {
-        this.lastFireTime = curTime;
-        missiles.push(new Bullet(this.x, this.y + 40, 0, 5.5, 1, 6, "#ff2d2d"));
-        playTone(300, 0.15, "sawtooth", -150);
-      }
-    }
-  }
-  draw() {
-    const cmap = { 1: "#b4143c", 2: "#ff3264", 3: "#ffe600", 4: "#ffffff" };
-    drawMatrix(PIXEL_BOSS, this.x, this.y, cmap, 6);
-    const barW = 160;
-    const hpW = Math.floor(barW * Math.max(0, this.hp / this.maxHp));
-    ctx.fillStyle = "#505064";
-    ctx.fillRect(this.x - barW / 2, this.y - this.radius - 16, barW, 6);
-    ctx.fillStyle = "#ff2d2d";
-    ctx.fillRect(this.x - barW / 2, this.y - this.radius - 16, hpW, 6);
-    ctx.fillStyle = "#ff2d2d";
-    ctx.font = "11px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(`BOSS HP: ${this.hp}/20`, this.x, this.y - this.radius - 20);
-  }
-}
-
-class Player {
-  constructor(pType, name, speedStat, powerStat, fireRateStat) {
-    this.pType = pType; this.name = name;
-    this.speedStat = speedStat; this.powerStat = powerStat; this.fireRateStat = fireRateStat;
-    this.clonePlaneTimer = 0.0; this.laserWeaponTimer = 0.0;
-    this.lastLaserTime = 0.0;
-    this.laserMuzzleFlashTime = 0.0;
-    this.shotCount = 0;
-    this.x = SCREEN_WIDTH / 2; this.y = SCREEN_HEIGHT * 0.8;
-    this.targetX = this.x; this.targetY = this.y;
-    this.radius = 22; this.shieldRemain = 0.0; this.lastShot = 0.0;
-    this.isAlive = true;
-  }
-  getRealSpeed() {
-    if (this.name === "Speed") return CONFIG.BASE_PLAYER_SPEED + (this.speedStat * CONFIG.STAT_SPEED_FACTOR * 1.2);
-    if (this.name === "Power") return (CONFIG.BASE_PLAYER_SPEED * 0.7) + (this.speedStat * CONFIG.STAT_SPEED_FACTOR * 0.7);
-    return CONFIG.BASE_PLAYER_SPEED + (this.speedStat * CONFIG.STAT_SPEED_FACTOR);
-  }
-  getFireInterval() {
-    const reduction = 1.0 / (1.0 + (this.fireRateStat - 1) * CONFIG.FIRE_RATE_REDUCTION);
-    let base = CONFIG.BASE_FIRE_INTERVAL;
-    if (this.name === "Speed" || this.name === "Power") base *= 1.30;
-    // 4) 레전드 비행기 발사 속도 추가 20% 감소 (간격 1.3 * 1.25 = 1.625배)
-    if (this.name === "Legend") base *= 1.625;
-    return Math.max(0.03, base * reduction);
-  }
-  update(dt) {
-    if (!this.isAlive) return;
-    if (this.clonePlaneTimer > 0) this.clonePlaneTimer = Math.max(0, this.clonePlaneTimer - dt);
-    if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
-    if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
-
-    if (isNaN(this.targetX)) this.targetX = this.x;
-    if (isNaN(this.targetY)) this.targetY = this.y;
-
-    const dx = this.targetX - this.x;
-    const dy = this.targetY - this.y;
-    const dist = Math.hypot(dx, dy);
-    const maxStep = this.getRealSpeed() * 60 * dt;
-    if (dist > 0.5) {
-      if (dist <= maxStep) { this.x = this.targetX; this.y = this.targetY; }
-      else { this.x += (dx / dist) * maxStep; this.y += (dy / dist) * maxStep; }
-    }
-    const maxLimitX = SCREEN_WIDTH - this.radius - (this.clonePlaneTimer > 0 ? 46 : 10);
-    this.x = Math.max(this.radius + 10, Math.min(maxLimitX, this.x));
-    this.y = Math.max(this.radius + 10, Math.min(SCREEN_HEIGHT - this.radius - 10, this.y));
-  }
-  _fire(px, py, dmg, isTriggerShot, bullets) {
-    // 4) 레전드 비행기 총알 각도 30% 더 축소 (4.9도 -> 3.43도)
-    if (this.name === "Legend") {
-      bullets.push(new Bullet(px, py - 22, 0, -17, dmg, 4, "#ffd700"));
-      const rad = 3.43 * (Math.PI / 180);
-      bullets.push(new Bullet(px, py - 22, -Math.sin(rad) * 17, -Math.cos(rad) * 17, dmg, 4, "#ffd700"));
-      bullets.push(new Bullet(px, py - 22, Math.sin(rad) * 17, -Math.cos(rad) * 17, dmg, 4, "#ffd700"));
-      playTone(900, 0.08, "triangle", -400);
-    } else if (this.name === "Speed") {
-      bullets.push(new Bullet(px, py - 22, 0, -17, dmg));
-      if (isTriggerShot) {
-        const mult = Math.floor(this.powerStat / 3);
-        for (let i = 0; i <= mult; i++) {
-          const rad = (10 + i * 2.5) * (Math.PI / 180);
-          bullets.push(new Bullet(px, py - 22, -Math.sin(rad) * 17, -Math.cos(rad) * 17, dmg));
-          bullets.push(new Bullet(px, py - 22, Math.sin(rad) * 17, -Math.cos(rad) * 17, dmg));
-        }
-      }
-      playTone(850, 0.07, "square", -350);
-    } else if (this.pType === 2) {
-      bullets.push(new Bullet(px - 12, py - 20, 0, -15, dmg));
-      bullets.push(new Bullet(px + 12, py - 20, 0, -15, dmg));
-      playTone(600, 0.05, "sine", -250);
-    } else if (this.pType === 1) {
-      const isSplash = (this.powerStat % 3 === 0) && isTriggerShot;
-      bullets.push(new Bullet(px, py - 24, 0, -14, dmg * 1.5, isSplash ? 9 : 7, isSplash ? "#ff2d2d" : "#ff8c00", isSplash));
-      playTone(380, 0.12, "sawtooth", -150);
-    } else {
-      bullets.push(new Bullet(px, py - 22, 0, -17, dmg));
-      playTone(700, 0.07, "square", -300);
-    }
-  }
-  shoot(curTime, bullets) {
-    if (!this.isAlive) return;
-    if (curTime - this.lastShot >= this.getFireInterval()) {
-      this.lastShot = curTime;
-      this.shotCount++;
-      const isTrigger = (this.name === "Speed") ? (this.shotCount % 4 === 0) : (this.shotCount % 5 === 0);
-      const dmg = Math.max(1, this.powerStat);
-      this._fire(this.x, this.y, dmg, isTrigger, bullets);
-      if (this.clonePlaneTimer > 0) this._fire(this.x + 42, this.y, dmg, isTrigger, bullets);
-    }
-  }
-  draw(curTime) {
-    if (!this.isAlive) return;
-    if (this.name === "Legend") {
-      const auraR = this.radius + 10 + Math.sin(curTime * 8) * 4;
-      ctx.fillStyle = "rgba(255, 215, 0, 0.3)";
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, auraR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const drawShipAt = (cx, cy) => {
-      let cmap = { 1: "#00f5ff", 2: "#ffffff", 3: "#0096ff", 4: "#ffe600" };
-      if (this.name === "Legend") cmap = { 1: "#ffd700", 2: "#ffffff", 3: "#ff8c00", 4: "#ffe600" };
-      else if (this.pType === 1) cmap = { 1: "#ff3c5a", 2: "#ffe600", 3: "#ffffff", 4: "#ff8c00" };
-      else if (this.pType === 2) cmap = { 1: "#64aaff", 2: "#ffffff", 3: "#00f5ff", 4: "#ffe600" };
-      drawMatrix(PIXEL_PLAYERS[this.pType], cx, cy, cmap, 4);
-
-      if (this.laserWeaponTimer > 0) {
-        ctx.fillStyle = "#00f5ff";
-        ctx.fillRect(cx - 28, cy - 8, 4, 18);
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.moveTo(cx - 26, cy - 13);
-        ctx.lineTo(cx - 29, cy - 8);
-        ctx.lineTo(cx - 23, cy - 8);
-        ctx.fill();
-
-        const flashElapsed = curTime - this.laserMuzzleFlashTime;
-        if (flashElapsed < 0.15) {
-          const sparkR = 4 + Math.random() * 3;
-          ctx.fillStyle = Math.floor(flashElapsed * 40) % 2 === 0 ? "#ffffff" : "#00f5ff";
-          ctx.beginPath();
-          ctx.arc(cx - 26, cy - 13, sparkR, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    };
-
-    drawShipAt(this.x, this.y);
-    if (this.clonePlaneTimer > 0) drawShipAt(this.x + 42, this.y);
-
-    if (this.shieldRemain > 0) {
-      ctx.strokeStyle = "#32ff78";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius + 14, 0, Math.PI * 2);
-      ctx.stroke();
-      if (this.clonePlaneTimer > 0) {
-        ctx.beginPath();
-        ctx.arc(this.x + 42, this.y, this.radius + 14, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.fillStyle = "#32ff78";
-      ctx.font = "bold 11px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(`SHIELD ${Math.round(this.shieldRemain)}s`, this.x, this.y + this.radius + 24);
-    }
-  }
-}
-
-// --- [전역 상태] ---
-let stars = Array.from({ length: 65 }, () => new Star());
-let player = null;
-let bullets = [];
-let enemies = [];
-let bossMissiles = [];
-let bossDropItems = [];
-let currentBoss = null;
-let explosions = [];
-let activeLasers = [];
-
-let gameState = 0;
-let legendShowcaseStartTime = 0;
-
-let score = 0;
-let skillGauge = 0.0;
-let startTime = 0;
-let lastSpawnTime = 0;
-let nextBossTargetTime = 90.0;
-let gaugeBoostTimer = 0.0;
-let lastDpsCheckTime = 0.0;
-let top10List = [];
-
-let slotPool = [];
-let slotPicked = null;
-let slotStartTime = 0;
-let slotIsSelected = false;
-let slotPickTime = 0;
-
-let randomCardDesign = Math.floor(Math.random() * 4);
-let lastRandomSwitch = 0;
-let lastRollTime = 0;
-let rollP = 1, rollS = 1, rollR = 1;
-let isTouchActive = false;
-
-// Firebase 리더보드
-async function fetchTop10() {
-  try {
-    const res = await fetch(FIREBASE_URL);
-    const data = await res.json();
-    if (data) {
-      const items = Object.values(data).filter(v => v && v.name && v.score !== undefined);
-      items.sort((a, b) => b.score - a.score);
-      top10List = items.slice(0, 10).map(v => ({ name: String(v.name).slice(0, 9), score: v.score }));
-    }
-  } catch(e){}
-}
-fetchTop10();
-
-async function uploadScore(name, finalScore) {
-  try {
-    await fetch(FIREBASE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name || "No Name", score: finalScore, time: Date.now() / 1000 })
-    });
-    fetchTop10();
-  } catch(e){}
-}
-
-function startBattle(type) {
-  initAudio();
-  if (type === 3) {
-    if (Math.random() < 0.08) {
-      // 2) 레전드 비행기 초기 파워 50% 축소 (3 -> 1.5)
-      player = new Player(4, "Legend", 3, 1.5, 3);
-      gameState = 4;
-      legendShowcaseStartTime = performance.now() / 1000;
-      playTone(523, 0.4, "triangle", 200, 0.3);
-      setTimeout(() => playTone(784, 0.5, "triangle", 300, 0.3), 300);
-      return;
-    } else {
-      const getStat = () => Math.random() < 0.6 ? 1 : (Math.random() < 0.8 ? 2 : 3);
-      player = new Player(randomCardDesign, "Random", getStat(), getStat(), getStat());
-    }
-  } else if (type === 0) player = new Player(0, "Speed", 3, 1, 1);
-  else if (type === 1) player = new Player(1, "Power", 1, 3, 1);
-  else player = new Player(2, "Twin", 1, 1, 3);
-
-  initBattleState();
-}
-
-function initBattleState() {
-  bullets = []; enemies = []; bossMissiles = []; bossDropItems = []; activeLasers = []; currentBoss = null;
-  score = 0; skillGauge = 0.0; gaugeBoostTimer = 0.0;
-  startTime = performance.now() / 1000;
-  lastSpawnTime = startTime;
-  lastDpsCheckTime = startTime;
-  nextBossTargetTime = 90.0;
-  isTouchActive = false;
-  gameState = 1;
-}
-
-function triggerSlot() {
-  enemies.forEach(e => explosions.push(new ExplosionFX(e.x, e.y, "#ff0080")));
-  enemies = [];
-  slotIsSelected = false;
-  slotPicked = null;
-  slotStartTime = performance.now() / 1000;
-
-  const isLegend = (player.name === "Legend");
-  const specialWeight = isLegend ? 0.4 : 1.1;
-  const normalWeight = 1.0;
-
-  slotPool = [
-    { code: "POWER_UP", label: "POWER UP (+1)", weight: normalWeight },
-    { code: "SPEED_UP", label: "SPEED UP (+1)", weight: normalWeight },
-    { code: "FIRE_RATE", label: "FIRING RATE (+1)", weight: normalWeight },
-    { code: "LASER_WEAPON", label: "LASER WEAPON (30.5s)", weight: specialWeight },
-    { code: "SHIELD", label: "SHIELD (30s)", weight: specialWeight }
-  ];
-  if (player.clonePlaneTimer <= 0) {
-    slotPool.push({ code: "CLONE_SHIP", label: "CLONE SHIP (30s)", weight: specialWeight });
-  }
-
-  gameState = 2;
-}
-
-function pickSlotRewardWeighted() {
-  const totalWeight = slotPool.reduce((acc, cur) => acc + cur.weight, 0);
-  let rnd = Math.random() * totalWeight;
-  for (let opt of slotPool) {
-    if (rnd < opt.weight) return opt;
-    rnd -= opt.weight;
-  }
-  return slotPool[0];
-}
-
-function applySlotReward(code) {
-  if (code === "POWER_UP") player.powerStat++;
-  else if (code === "SPEED_UP") player.speedStat += (player.name === "Power" ? 0.7 : 1.0);
-  else if (code === "FIRE_RATE") player.fireRateStat++;
-  else if (code === "CLONE_SHIP") player.clonePlaneTimer = CONFIG.CLONE_SHIP_DURATION;
-  else if (code === "LASER_WEAPON") { player.laserWeaponTimer = CONFIG.LASER_WEAPON_DURATION; player.lastLaserTime = performance.now() / 1000; }
-  else if (code === "SHIELD") player.shieldRemain = CONFIG.SHIELD_DURATION;
-}
-
-function isEligibleForTop10(currScore) {
-  if (top10List.length < 10) return true;
-  return currScore > top10List[top10List.length - 1].score;
-}
-
-function getCanvasCoords(clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return { x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 };
-  const scaleX = SCREEN_WIDTH / rect.width;
-  const scaleY = SCREEN_HEIGHT / rect.height;
-  const x = Math.max(0, Math.min(SCREEN_WIDTH, (clientX - rect.left) * scaleX));
-  const y = Math.max(0, Math.min(SCREEN_HEIGHT, (clientY - rect.top) * scaleY));
-  return { x, y };
-}
-
-function handlePointerMove(clientX, clientY) {
-  if (!isTouchActive || gameState !== 1 || !player) return;
-  const coords = getCanvasCoords(clientX, clientY);
-  player.targetX = coords.x;
-  player.targetY = Math.max(player.radius + 10, Math.min(SCREEN_HEIGHT - player.radius - 10, coords.y - 120));
-}
-
-function handlePointerDown(clientX, clientY) {
-  initAudio();
-  isTouchActive = true;
-  const coords = getCanvasCoords(clientX, clientY);
-
-  if (gameState === 0) {
-    if (coords.y >= 165 && coords.y <= 240) startBattle(0);
-    else if (coords.y >= 250 && coords.y <= 325) startBattle(1);
-    else if (coords.y >= 335 && coords.y <= 410) startBattle(2);
-    else if (coords.y >= 420 && coords.y <= 495) startBattle(3);
-  } else if (gameState === 1 && player) {
-    player.targetX = coords.x;
-    player.targetY = Math.max(player.radius + 10, Math.min(SCREEN_HEIGHT - player.radius - 10, coords.y - 120));
-  } else if (gameState === 2 && !slotIsSelected) {
-    slotIsSelected = true;
-    slotPickTime = performance.now() / 1000;
-    slotPicked = pickSlotRewardWeighted();
-    playTone(659, 0.25, "triangle", 150);
-  } else if (gameState === 3) {
-    const btnRect = { x: SCREEN_WIDTH / 2 - 90, y: SCREEN_HEIGHT * 0.3 + 125, w: 180, h: 42 };
-    if (coords.x >= btnRect.x && coords.x <= btnRect.x + btnRect.w && coords.y >= btnRect.y && coords.y <= btnRect.y + btnRect.h) {
-      const name = nameInput.value.trim() || "No Name";
-      uploadScore(name, score);
-      nameInputOverlay.style.display = "none";
-      gameState = 0;
-    }
-  }
-}
-
-function handlePointerUp() {
-  isTouchActive = false;
-  if (player) {
-    player.targetX = player.x;
-    player.targetY = player.y;
-  }
-}
-
-window.addEventListener("mousemove", e => { if (e.buttons === 1) handlePointerMove(e.clientX, e.clientY); });
-window.addEventListener("mousedown", e => handlePointerDown(e.clientX, e.clientY));
-window.addEventListener("mouseup", handlePointerUp);
-
-canvas.addEventListener("touchmove", e => {
-  e.preventDefault();
-  if (e.touches.length > 0) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: false });
-
-canvas.addEventListener("touchstart", e => {
-  e.preventDefault();
-  if (e.touches.length > 0) handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: false });
-
-canvas.addEventListener("touchend", e => {
-  e.preventDefault();
-  handlePointerUp();
-}, { passive: false });
-
-canvas.addEventListener("touchcancel", e => {
-  e.preventDefault();
-  handlePointerUp();
-}, { passive: false });
-
-// --- [메인 루프] ---
-let lastTime = performance.now();
-
-function gameLoop(now) {
-  const curTime = now / 1000;
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
-  lastTime = now;
-
-  stars.forEach(s => s.update());
-  explosions.forEach(ex => ex.update(dt));
-  explosions = explosions.filter(ex => ex.life > 0);
-
-  // 1. SELECT STATE
-  if (gameState === 0) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "bold 29px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("NEON FLIGHT: OVERDRIVE", SCREEN_WIDTH / 2, 60);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "13px Arial";
-    ctx.fillText("CHOOSE YOUR FIGHTER", SCREEN_WIDTH / 2, 95);
-
-    if (curTime - lastRandomSwitch >= 0.5) {
-      lastRandomSwitch = curTime;
-      randomCardDesign = Math.floor(Math.random() * 4);
-    }
-    // 4번째 비행기 수치 변경 속도
-    if (curTime - lastRollTime >= 0.175) {
-      lastRollTime = curTime;
-      rollP = Math.floor(1 + Math.random() * 3);
-      rollS = Math.floor(1 + Math.random() * 3);
-      rollR = Math.floor(1 + Math.random() * 3);
-    }
-
-    const cards = [
-      { name: "SPEED", p: 1, s: 3, r: 1, bg: "#193c5f", bdr: "#00f5ff", y: 165, img: 0 },
-      { name: "POWER", p: 3, s: 1, r: 1, bg: "#5f1e2d", bdr: "#ff3c5a", y: 250, img: 1 },
-      { name: "TWIN", p: 1, s: 1, r: 3, bg: "#28325f", bdr: "#78a0ff", y: 335, img: 2 },
-      { name: "RANDOM", p: rollP, s: rollS, r: rollR, bg: "#461e5f", bdr: "#c832ff", y: 420, img: randomCardDesign }
-    ];
-
-    cards.forEach(c => {
-      ctx.fillStyle = c.bg;
-      ctx.beginPath();
-      ctx.roundRect(35, c.y, SCREEN_WIDTH - 70, 75, 10);
-      ctx.fill();
-      ctx.strokeStyle = c.bdr;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      drawMatrix(PIXEL_PLAYERS[c.img], 75, c.y + 37, { 1: c.bdr, 2: "#fff", 3: "#ffe600", 4: "#ff8c00" }, 3);
-
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 15px Arial";
-      ctx.fillText(c.name, 115, c.y + 22);
-
-      const maxVal = Math.max(c.p, c.s, c.r);
-      const isMaxP = (c.p === maxVal);
-      const isMaxS = (c.s === maxVal && !isMaxP);
-      const isMaxR = (c.r === maxVal && !isMaxP && !isMaxS);
-
-      let xOffset = 115;
-      const renderStat = (label, val, isHigh) => {
-        ctx.font = isHigh ? "bold 14px Arial" : "12px Arial";
-        ctx.fillStyle = isHigh ? "#ffe600" : "#a0b0c8";
-        const txtStr = `${label} ${val}`;
-        ctx.fillText(txtStr, xOffset, c.y + 50);
-        xOffset += ctx.measureText(txtStr).width + 8;
-
-        ctx.font = "12px Arial";
-        ctx.fillStyle = "#647082";
-        ctx.fillText("|", xOffset, c.y + 50);
-        xOffset += 10;
-      };
-
-      renderStat("PWR", c.p, isMaxP);
-      renderStat("SPD", c.s, isMaxS);
-      ctx.font = isMaxR ? "bold 14px Arial" : "12px Arial";
-      ctx.fillStyle = isMaxR ? "#ffe600" : "#a0b0c8";
-      ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 50);
-    });
-
-    const t5Y = 515;
-    ctx.fillStyle = "rgba(10, 15, 30, 0.65)";
-    ctx.beginPath();
-    ctx.roundRect(35, t5Y, SCREEN_WIDTH - 70, 120, 8);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(0, 245, 255, 0.4)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "bold 11px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("★ GLOBAL TOP 5 PLAYERS ★", SCREEN_WIDTH / 2, t5Y + 18);
-
-    const top5 = top10List.slice(0, 5);
-    ctx.font = "11px monospace";
-    if (top5.length === 0) {
-      ctx.fillStyle = "#a0b0c8";
-      ctx.fillText("WAITING FOR RECORDS...", SCREEN_WIDTH / 2, t5Y + 65);
-    } else {
-      top5.forEach((item, idx) => {
-        const rowY = t5Y + 36 + idx * 16;
-        ctx.textAlign = "left";
-        ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#fff");
-        ctx.fillText(`${idx + 1}. ${item.name}`, 55, rowY);
-        ctx.textAlign = "right";
-        ctx.fillText(`${item.score} PTS`, SCREEN_WIDTH - 55, rowY);
-      });
-    }
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, SCREEN_HEIGHT - 12);
-
-  // 1-1. LEGEND SHOWCASE STATE
-  } else if (gameState === 4) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    const elapsedShowcase = curTime - legendShowcaseStartTime;
-    const remainSec = Math.max(0, (3.0 - elapsedShowcase).toFixed(1));
-
-    const cx = SCREEN_WIDTH / 2;
-    const cy = SCREEN_HEIGHT / 2 - 40;
-    const pulse = Math.sin(curTime * 8) * 10;
-    ctx.fillStyle = "rgba(255, 215, 0, 0.25)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 75 + pulse, 0, Math.PI * 2);
-    ctx.fill();
-
-    drawMatrix(PIXEL_PLAYERS[4], cx, cy, { 1: "#ffd700", 2: "#ffffff", 3: "#ff8c00", 4: "#ffe600" }, 7);
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 20px Arial";
-    ctx.fillText("CONGRATULATIONS!", cx, cy + 100);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText("LEGEND SHIP UNLOCKED!", cx, cy + 130);
-
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`GAME STARTS IN ${remainSec}s`, cx, cy + 170);
-
-    if (elapsedShowcase >= 3.0) initBattleState();
-
-  // 2. BATTLE STATE
-  } else if (gameState === 1) {
-    const elapsed = curTime - startTime;
-    if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
-
-    player.update(dt);
-    player.shoot(curTime, bullets);
-
-    // 2) 초반 60초 적용: 속도 50% 감속, 체력 30% 감속, 좌우 폭 50% 축소
-    const isEarlyPhase = (elapsed < 60.0);
-    const speedScale = isEarlyPhase ? 0.5 : 1.0;
-    const widthScale = isEarlyPhase ? 0.5 : 1.0;
-    const hpScale = isEarlyPhase ? 0.7 : 1.0;
-    const earlyGaugeMultiplier = isEarlyPhase ? 1.5 : 1.0;
-
-    const steps30s = Math.floor(elapsed / 30);
-    // 1) 스킬 게이지 기본 충전량 2.6 기반 계산
-    const baseGaugePerKill = Math.max(CONFIG.MIN_GAUGE_PER_KILL, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.92, steps30s));
-    const gaugePerKill = baseGaugePerKill * (gaugeBoostTimer > 0 ? 2 : 1) * earlyGaugeMultiplier;
-
-    const timeFactor = Math.min(1.0, elapsed / 180.0);
-    const spawnInterval = Math.max(0.04, (0.55 - timeFactor * 0.32) * Math.pow(1 / 1.10, steps30s));
-
-    if (curTime - lastSpawnTime > spawnInterval) {
-      lastSpawnTime = curTime;
-      const calculatedHp = Math.max(1, Math.round((2 + Math.random() * 3) * hpScale));
-      enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + timeFactor * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length)));
-    }
-
-    if (!currentBoss && elapsed >= nextBossTargetTime) {
-      currentBoss = new BossEnemy();
-      nextBossTargetTime += 90.0;
-    }
-    if (currentBoss) currentBoss.update(dt, curTime, bossMissiles);
-
-    for (let i = bossDropItems.length - 1; i >= 0; i--) {
-      const it = bossDropItems[i];
-      it.update(dt);
-      if (it.y > SCREEN_HEIGHT + 30) {
-        bossDropItems.splice(i, 1);
-        continue;
-      }
-      if (player.isAlive && Math.hypot(player.x - it.x, player.y - it.y) < player.radius + it.radius) {
-        const itemType = it.getType(curTime);
-        if (itemType === "P") player.powerStat++;
-        else if (itemType === "S") player.speedStat++;
-        else if (itemType === "D") player.fireRateStat++;
-
-        bossDropItems.splice(i, 1);
-        playTone(784, 0.2, "triangle", 150);
-      }
-    }
-
-    if (player.isAlive && player.laserWeaponTimer > 0 && curTime - player.lastLaserTime >= CONFIG.LASER_WEAPON_INTERVAL) {
-      player.lastLaserTime = curTime;
-      player.laserMuzzleFlashTime = curTime;
-      
-      const firePoints = [{ x: player.x - 26, y: player.y - 12 }];
-      if (player.clonePlaneTimer > 0) firePoints.push({ x: player.x + 42 - 26, y: player.y - 12 });
-
-      firePoints.forEach(fp => {
-        const valid = enemies.filter(e => e.y > 0 && e.hp > 0);
-        if (valid.length > 0) {
-          valid.sort((a, b) => Math.hypot(a.x - fp.x, a.y - fp.y) - Math.hypot(b.x - fp.x, b.y - fp.y));
-          const target = valid[0];
-          activeLasers.push({ sx: fp.x, sy: fp.y, tx: target.x, ty: target.y, t: curTime });
-          
-          target.hp = 0;
-          const eIndex = enemies.indexOf(target);
-          if (eIndex !== -1) enemies.splice(eIndex, 1);
-
-          score++;
-          skillGauge += gaugePerKill;
-          explosions.push(new ExplosionFX(target.x, target.y, "#00f5ff"));
-          playExplosionSound();
-        }
-      });
-    }
-    activeLasers = activeLasers.filter(l => curTime - l.t < CONFIG.LASER_BEAM_LINGER_TIME);
-
-    bullets.forEach(b => b.update(dt));
-    bullets = bullets.filter(b => b.y > -20 && b.x > -20 && b.x < SCREEN_WIDTH + 20);
-
-    bossMissiles.forEach(m => m.update(dt));
-    bossMissiles = bossMissiles.filter(m => m.y < SCREEN_HEIGHT + 30);
-
-    for (let i = bossMissiles.length - 1; i >= 0; i--) {
-      const m = bossMissiles[i];
-      if (player.isAlive && Math.hypot(player.x - m.x, player.y - m.y) < player.radius + m.radius) {
-        bossMissiles.splice(i, 1);
-        if (player.shieldRemain <= 0) {
-          player.isAlive = false;
-          explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
-          playExplosionSound();
-          handleGameOver();
-          break;
-        }
-      }
-    }
-
-    for (let ei = enemies.length - 1; ei >= 0; ei--) {
-      const e = enemies[ei];
-      // 2) 60초 동안 속도 및 좌우 폭 50% 축소 전달
-      e.update(dt, elapsed, speedScale, widthScale);
-      if (e.y > SCREEN_HEIGHT + 40) { enemies.splice(ei, 1); continue; }
-
-      for (let bi = bullets.length - 1; bi >= 0; bi--) {
-        const b = bullets[bi];
-        if (Math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius) {
-          if (e.hasShield) {
-            e.hasShield = false;
-            bullets.splice(bi, 1);
-            explosions.push(new ExplosionFX(e.x, e.y, "#00f5ff"));
-            playTone(800, 0.05, "triangle");
-            break;
-          }
-          e.hp -= b.dmg;
-          bullets.splice(bi, 1);
-          if (e.hp <= 0) {
-            enemies.splice(ei, 1);
-            score++;
-            skillGauge += gaugePerKill;
-            explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
-            playExplosionSound();
-            break;
-          }
-        }
-      }
-
-      if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
-        if (player.shieldRemain > 0) {
-          enemies.splice(ei, 1);
-          explosions.push(new ExplosionFX(e.x, e.y, "#32ff78"));
-          playExplosionSound();
-        } else {
-          player.isAlive = false;
-          explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
-          playExplosionSound();
-          handleGameOver();
-          break;
-        }
-      }
-    }
-
-    if (currentBoss) {
-      for (let bi = bullets.length - 1; bi >= 0; bi--) {
-        const b = bullets[bi];
-        if (Math.hypot(b.x - currentBoss.x, b.y - currentBoss.y) < b.radius + currentBoss.radius) {
-          bullets.splice(bi, 1);
-          currentBoss.hp--;
-          if (currentBoss.hp <= 0) {
-            score += 20;
-            skillGauge += gaugePerKill * 3;
-            bossDropItems.push(new BossDropItem(currentBoss.x, currentBoss.y));
-            for (let k = 0; k < 4; k++) {
-              explosions.push(new ExplosionFX(currentBoss.x + (Math.random()*40-20), currentBoss.y + (Math.random()*40-20), "#ff2d2d"));
-            }
-            currentBoss = null;
-            playExplosionSound();
-            break;
-          }
-        }
-      }
-    }
-
-    if (skillGauge >= CONFIG.MAX_SKILL_GAUGE) {
-      skillGauge = 0.0;
-      triggerSlot();
-    }
-
-    // 렌더링
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    // 9) 리더보드 HUD를 적 비행기보다 뒤쪽에 배치 & 투명도 증가 (0.25)
-    ctx.fillStyle = "rgba(10, 15, 30, 0.25)";
-    ctx.fillRect(10, 10, 150, 150);
-    ctx.strokeStyle = "rgba(0, 245, 255, 0.2)";
-    ctx.strokeRect(10, 10, 150, 150);
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "10px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
-    top10List.forEach((item, idx) => {
-      ctx.fillStyle = idx === 0 ? "rgba(255, 230, 0, 0.85)" : "rgba(255, 255, 255, 0.75)";
-      ctx.fillText(`${idx+1}. ${item.name} ${item.score}`, 16, 38 + idx * 12);
-    });
-
-    // 전방 오브젝트 렌더링
-    activeLasers.forEach(l => {
-      ctx.strokeStyle = "#00f5ff";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(l.sx, l.sy);
-      ctx.lineTo(l.tx, l.ty);
-      ctx.stroke();
-    });
-
-    bullets.forEach(b => b.draw());
-    bossMissiles.forEach(m => m.draw());
-    bossDropItems.forEach(it => it.draw(curTime));
-    enemies.forEach(e => e.draw(curTime));
-    if (currentBoss) currentBoss.draw();
-    explosions.forEach(ex => ex.draw());
-    player.draw(curTime);
-
-    // 상단 HUD
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 15px Arial";
-    ctx.fillText(`SCORE: ${score}`, SCREEN_WIDTH - 20, 25);
-    ctx.fillStyle = "#ffe600";
-    ctx.font = "13px Arial";
-    ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, SCREEN_WIDTH - 20, 45);
-
-    // 하단 스탯 및 버전 정보
-    const baseBottomY = SCREEN_HEIGHT - 12;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, baseBottomY);
-
-    ctx.font = "12px Arial";
-    ctx.fillStyle = "#ff0080"; ctx.fillText(`POWER : Lv.${Math.round(player.powerStat)}`, 10, baseBottomY - 58);
-    ctx.fillStyle = "#00f5ff"; ctx.fillText(`SPEED : Lv.${Math.round(player.speedStat)}`, 10, baseBottomY - 42);
-    ctx.fillStyle = "#ffe600"; ctx.fillText(`RATE  : Lv.${Math.round(player.fireRateStat)}`, 10, baseBottomY - 26);
-    ctx.fillStyle = player.shieldRemain > 0 ? "#32ff78" : "#808096";
-    ctx.fillText(`SHIELD: ${player.shieldRemain > 0 ? Math.round(player.shieldRemain) + 's' : 'OFF'}`, 10, baseBottomY - 10);
-
-    // 스킬 게이지 바
-    const gw = 130, gh = 16, gx = SCREEN_WIDTH - gw - 20, gy = SCREEN_HEIGHT - 35;
-    const gPct = Math.min(1.0, skillGauge / CONFIG.MAX_SKILL_GAUGE);
-    if (gPct >= 0.8) {
-      ctx.fillStyle = "rgba(255, 230, 0, 0.3)";
-      ctx.fillRect(gx - 4, gy - 4, gw + 8, gh + 8);
-    }
-    ctx.fillStyle = "#505064";
-    ctx.fillRect(gx, gy, gw, gh);
-    ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
-    ctx.fillRect(gx, gy, gw * gPct, gh);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
-    ctx.font = "12px Arial";
-    ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
-
-  // 3. SLOT STATE
-  } else if (gameState === 2) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-    explosions.forEach(ex => ex.draw());
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ff0080";
-    ctx.font = "bold 22px Arial";
-    ctx.fillText("ALL ENEMIES CLEARED!", SCREEN_WIDTH / 2, 50);
-
-    const slotElapsed = curTime - slotStartTime;
-    if (!slotIsSelected && slotElapsed >= CONFIG.SLOT_AUTO_PICK_TIMEOUT) {
-      slotIsSelected = true;
-      slotPickTime = curTime;
-      slotPicked = pickSlotRewardWeighted();
-    }
-
-    let dispLabel = "";
-    if (!slotIsSelected) {
-      const idx = Math.floor(slotElapsed / CONFIG.SLOT_CYCLE_INTERVAL) % slotPool.length;
-      dispLabel = slotPool[idx].label;
-    } else {
-      dispLabel = slotPicked.label;
-      if (curTime - slotPickTime >= CONFIG.SLOT_RESULT_DISPLAY_TIME) {
-        applySlotReward(slotPicked.code);
-        gameState = 1;
-      }
-    }
-
-    ctx.fillStyle = "#161c37";
-    ctx.beginPath();
-    ctx.roundRect(45, 300, SCREEN_WIDTH - 90, 110, 14);
-    ctx.fill();
-    ctx.strokeStyle = slotIsSelected ? "#32ff78" : "#ffe600";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 20px Arial";
-    ctx.fillText(dispLabel, SCREEN_WIDTH / 2, 362);
-
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "14px Arial";
-    ctx.fillText(slotIsSelected ? "SELECTED!" : "TAP ANYWHERE TO STOP!", SCREEN_WIDTH / 2, 450);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, SCREEN_HEIGHT - 12);
-
-  // 4. GAMEOVER STATE
-  } else if (gameState === 3) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    const popY = SCREEN_HEIGHT * 0.3;
-    ctx.fillStyle = "#14192d";
-    ctx.beginPath();
-    ctx.roundRect(SCREEN_WIDTH / 2 - 160, popY - 20, 320, 220, 14);
-    ctx.fill();
-    ctx.strokeStyle = "#ff0080";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ff0080";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("GAME OVER", SCREEN_WIDTH / 2, popY + 15);
-    ctx.fillStyle = "#ffe600";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(`FINAL SCORE: ${score}`, SCREEN_WIDTH / 2, popY + 45);
-
-    ctx.fillStyle = "#00f5ff";
-    ctx.beginPath();
-    ctx.roundRect(SCREEN_WIDTH / 2 - 90, popY + 125, 180, 42, 8);
-    ctx.fill();
-    ctx.fillStyle = "#14192d";
-    ctx.font = "bold 15px Arial";
-    ctx.fillText("SUBMIT & RESTART", SCREEN_WIDTH / 2, popY + 151);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, SCREEN_HEIGHT - 12);
-  }
-
-  requestAnimationFrame(gameLoop);
-}
-
-function handleGameOver() {
-  setTimeout(() => {
-    if (isEligibleForTop10(score)) {
-      gameState = 3;
-      nameInputOverlay.style.display = "block";
-      nameInput.value = "";
-      nameInput.focus();
-    } else {
-      gameState = 0;
-    }
-  }, 800);
-}
-
-requestAnimationFrame(gameLoop);
-</script>
-</body>
-</html>
+PIXEL_ENEMIES = [
+    [[0,0,1,1,1,1,0,0],[0,1,2,2,2,2,1,0],[1,1,3,2,2,3,1,1],[1,1,1,1,1,1,1,1],[1,0,1,0,0,1,0,1],[0,1,0,0,0,0,1,0]],
+    [[0,0,0,1,1,0,0,0],[0,0,1,2,2,1,0,0],[0,1,2,3,3,2,1,0],[1,2,3,3,3,3,2,1],[0,1,2,3,3,2,1,0],[0,0,1,2,2,1,0,0],[0,0,0,1,1,0,0,0]],
+    [[1,0,0,0,0,0,0,1],[1,1,0,0,0,0,1,1],[1,1,1,0,0,1,1,1],[0,1,2,1,1,2,1,0],[0,0,1,2,2,1,0,0],[0,0,0,1,1,0,0,0]]
+]
+
+class Player:
+    def __init__(self, p_type):
+        self.p_type = p_type
+        self.x = SCREEN_WIDTH // 2
+        self.y = int(SCREEN_HEIGHT * 0.8)
+        self.target_x = self.x
+        self.target_y = self.y
+        self.radius = 22
+        self.power_stat = 1 if p_type != 1 else 3
+        self.speed_stat = 3 if p_type == 0 else 1
+        self.fire_rate_stat = 3 if p_type == 2 else 1
+        self.clone_plane_timer = 0.0
+        self.laser_weapon_timer = 0.0
+        self.last_laser_time = 0.0
+        self.shield_remain = 0.0
+        self.last_shot = 0.0
+        self.is_alive = True
+
+    def update_position(self, dt):
+        if self.clone_plane_timer > 0:
+            self.clone_plane_timer = max(0.0, self.clone_plane_timer - dt)
+        if self.laser_weapon_timer > 0:
+            self.laser_weapon_timer = max(0.0, self.laser_weapon_timer - dt)
+        if self.shield_remain > 0:
+            self.shield_remain = max(0.0, self.shield_remain - dt)
+
+        dx = self.target_x - self.x
+        dy = self.target_y - self.y
+        dist = math.hypot(dx, dy)
+        speed = (CONFIG["BASE_PLAYER_SPEED"] + self.speed_stat * 0.6) * 60.0 * dt
+        if dist > 0.5:
+            if dist <= speed:
+                self.x = self.target_x
+                self.y = self.target_y
+            else:
+                self.x += (dx / dist) * speed
+                self.y += (dy / dist) * speed
+
+    def shoot(self, current_time, bullets):
+        interval = max(0.08, CONFIG["BASE_FIRE_INTERVAL"] - self.fire_rate_stat * 0.05)
+        if current_time - self.last_shot >= interval:
+            self.last_shot = current_time
+            if self.p_type == 2:
+                bullets.append(Bullet(self.x - 12, self.y - 20, 0, -15, self.power_stat))
+                bullets.append(Bullet(self.x + 12, self.y - 20, 0, -15, self.power_stat))
+            else:
+                bullets.append(Bullet(self.x, self.y - 22, 0, -16, self.power_stat))
+            if self.clone_plane_timer > 0:
+                bullets.append(Bullet(self.x + 40, self.y - 22, 0, -16, self.power_stat))
+
+    def draw(self, surf):
+        matrix = PIXEL_PLAYERS[self.p_type]
+        cmap = {1: COLOR_CYAN, 2: COLOR_WHITE, 3: (0, 150, 255), 4: COLOR_YELLOW}
+        draw_pixel_matrix(surf, self.x, self.y, matrix, cmap, pixel_size=4)
+        if self.clone_plane_timer > 0:
+            draw_pixel_matrix(surf, self.x + 40, self.y, matrix, cmap, pixel_size=4)
+        if self.shield_remain > 0:
+            pygame.draw.circle(surf, COLOR_GREEN, (int(self.x), int(self.y)), self.radius + 12, 2)
+
+class Bullet:
+    def __init__(self, x, y, vx, vy, dmg):
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.dmg = dmg
+        self.radius = 4
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+
+    def draw(self, surf):
+        pygame.draw.circle(surf, COLOR_YELLOW, (int(self.x), int(self.y)), self.radius)
+
+class LaserBeamLine:
+    def __init__(self, start_pos, target_pos, start_time):
+        self.start_pos = start_pos
+        self.target_pos = target_pos
+        self.birth_time = start_time
+
+    def is_expired(self, cur_time):
+        return (cur_time - self.birth_time) >= CONFIG["LASER_BEAM_LINGER_TIME"]
+
+    def draw(self, surf, cur_time):
+        elapsed = cur_time - self.birth_time
+        alpha = max(0, min(255, int((1.0 - (elapsed / CONFIG["LASER_BEAM_LINGER_TIME"])) * 255)))
+        laser_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.line(laser_surf, (*COLOR_CYAN, alpha), self.start_pos, self.target_pos, 3)
+        pygame.draw.line(laser_surf, (*COLOR_WHITE, alpha), self.start_pos, self.target_pos, 1)
+        surf.blit(laser_surf, (0, 0))
+
+class Enemy:
+    def __init__(self):
+        self.x = float(random.randint(40, SCREEN_WIDTH - 40))
+        self.y = -30.0
+        self.hp = 3
+        self.speed = random.uniform(3.0, 5.0)
+        self.radius = 20
+
+    def update(self):
+        self.y += self.speed
+
+    def draw(self, surf):
+        matrix = PIXEL_ENEMIES[0]
+        cmap = {1: (255, 60, 100), 2: (255, 180, 0), 3: COLOR_WHITE}
+        draw_pixel_matrix(surf, self.x, self.y, matrix, cmap, pixel_size=4)
+
+player = None
+bullets = []
+enemies = []
+active_laser_lines = []
+score = 0
+skill_gauge = 0.0
+last_spawn = 0.0
+
+# 슬롯 옵션 기본 설정 (코드, 라벨, 가중치)
+SLOT_CONFIG_RAW = [
+    ("POWER_UP", "POWER UP (+1)", 30),
+    ("SPEED_UP", "SPEED UP (+1)", 30),
+    ("FIRE_RATE", "FIRING RATE (+1)", 30),
+    ("SHIELD", "SHIELD (30s)", 15),
+    ("LASER_WEAPON", "LASER WEAPON (30.5s)", 15),
+    ("CLONE_SHIP", "CLONE SHIP (30s)", 10)
+]
+
+slot_active_pool = []
+slot_start_time = 0.0
+slot_picked_code = None
+slot_picked_label = None
+slot_pick_time = 0.0
+slot_is_selected = False
+slot_anim_idx = 0
+
+def start_battle(p_type):
+    global player, bullets, enemies, active_laser_lines, score, skill_gauge, game_state, last_spawn
+    player = Player(p_type)
+    bullets.clear()
+    enemies.clear()
+    active_laser_lines.clear()
+    score = 0
+    skill_gauge = 0.0
+    last_spawn = time.time()
+    game_state = STATE_BATTLE
+
+def get_current_slot_pool():
+    pool = []
+    for code, label, weight in SLOT_CONFIG_RAW:
+        if code == "CLONE_SHIP" and player.clone_plane_timer > 0:
+            continue
+        if code == "POWER_UP" and player.power_stat >= 10:
+            continue
+        if code == "SPEED_UP" and player.speed_stat >= 10:
+            continue
+        if code == "FIRE_RATE" and player.fire_rate_stat >= 10:
+            continue
+        pool.append({"code": code, "label": label, "weight": weight})
+
+    if not pool:
+        pool = [{"code": "SHIELD", "label": "SHIELD (30s)", "weight": 50},
+                {"code": "LASER_WEAPON", "label": "LASER WEAPON (30.5s)", "weight": 50}]
+
+    total_w = sum(item["weight"] for item in pool)
+    for item in pool:
+        item["prob"] = (item["weight"] / total_w) * 100.0
+    return pool
+
+def trigger_slot_screen():
+    global game_state, enemies, slot_is_selected, slot_picked_code, slot_picked_label, slot_active_pool, slot_start_time
+    enemies.clear()
+    active_laser_lines.clear()
+    slot_is_selected = False
+    slot_picked_code = None
+    slot_picked_label = None
+    slot_start_time = time.time()
+    slot_active_pool = get_current_slot_pool()
+    game_state = STATE_SLOT
+
+def pick_slot_reward():
+    codes = [item["code"] for item in slot_active_pool]
+    weights = [item["weight"] for item in slot_active_pool]
+    chosen = random.choices(codes, weights=weights, k=1)[0]
+    for item in slot_active_pool:
+        if item["code"] == chosen:
+            return item["code"], item["label"]
+    return slot_active_pool[0]["code"], slot_active_pool[0]["label"]
+
+def apply_slot_reward(reward_code):
+    global player
+    if reward_code == "POWER_UP":
+        player.power_stat = min(10, player.power_stat + 1)
+    elif reward_code == "SPEED_UP":
+        player.speed_stat = min(10, player.speed_stat + 1)
+    elif reward_code == "FIRE_RATE":
+        player.fire_rate_stat = min(10, player.fire_rate_stat + 1)
+    elif reward_code == "CLONE_SHIP":
+        player.clone_plane_timer = CONFIG["CLONE_SHIP_DURATION"]
+    elif reward_code == "LASER_WEAPON":
+        player.laser_weapon_timer = CONFIG["LASER_WEAPON_DURATION"]
+        player.last_laser_time = time.time()
+    elif reward_code == "SHIELD":
+        player.shield_remain = CONFIG["SHIELD_DURATION"]
+
+async def main():
+    global game_state, score, skill_gauge, last_spawn
+    global slot_is_selected, slot_picked_code, slot_picked_label, slot_pick_time, slot_anim_idx
+    running = True
+
+    while running:
+        dt = clock.tick(FPS) / 1000.0
+        cur_time = time.time()
+
+        for st in stars:
+            st.update()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            if game_state == STATE_SELECT:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    if 220 <= my <= 320:
+                        start_battle(0)
+                    elif 340 <= my <= 440:
+                        start_battle(1)
+                    elif 460 <= my <= 560:
+                        start_battle(2)
+
+            elif game_state == STATE_BATTLE:
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION):
+                    if pygame.mouse.get_pressed()[0]:
+                        tx, ty = event.pos
+                        player.target_x = tx
+                        player.target_y = ty - 80
+
+            elif game_state == STATE_SLOT:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if not slot_is_selected and len(slot_active_pool) > 0:
+                        slot_is_selected = True
+                        slot_pick_time = cur_time
+                        slot_picked_code, slot_picked_label = pick_slot_reward()
+
+            elif game_state == STATE_GAMEOVER:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    game_state = STATE_SELECT
+
+        screen.fill(COLOR_BG)
+        for st in stars:
+            st.draw(screen, (200, 220, 255))
+
+        if game_state == STATE_SELECT:
+            t = FONT_L.render("NEON FLIGHT: OVERDRIVE", True, COLOR_CYAN)
+            sub = FONT_S.render("CLICK A SHIP TO START", True, COLOR_WHITE)
+            screen.blit(t, (SCREEN_WIDTH // 2 - t.get_width() // 2, 90))
+            screen.blit(sub, (SCREEN_WIDTH // 2 - sub.get_width() // 2, 140))
+
+            cards = [("1. SPEED", 220, 0), ("2. POWER", 340, 1), ("3. TWIN", 460, 2)]
+            for name, y, p_type in cards:
+                box = pygame.Rect(40, y, SCREEN_WIDTH - 80, 80)
+                pygame.draw.rect(screen, (25, 30, 50), box, border_radius=8)
+                pygame.draw.rect(screen, COLOR_CYAN, box, 2, border_radius=8)
+                txt = FONT_M.render(name, True, COLOR_WHITE)
+                screen.blit(txt, (box.centerx - txt.get_width() // 2, box.centery - txt.get_height() // 2))
+
+        elif game_state == STATE_BATTLE:
+            player.update_position(dt)
+            player.shoot(cur_time, bullets)
+
+            # 레이저 무기 발사 로직
+            if player.is_alive and player.laser_weapon_timer > 0 and cur_time - player.last_laser_time >= CONFIG["LASER_WEAPON_INTERVAL"]:
+                player.last_laser_time = cur_time
+                if enemies:
+                    target = min(enemies, key=lambda e: math.hypot(e.x - player.x, e.y - player.y))
+                    active_laser_lines.append(LaserBeamLine((player.x, player.y - 12), (target.x, target.y), cur_time))
+                    enemies.remove(target)
+                    score += 1
+                    skill_gauge += CONFIG["GAUGE_PER_KILL"]
+
+            active_laser_lines = [line for line in active_laser_lines if not line.is_expired(cur_time)]
+
+            if cur_time - last_spawn >= 0.8:
+                last_spawn = cur_time
+                enemies.append(Enemy())
+
+            for b in bullets[:]:
+                b.update()
+                if b.y < -10:
+                    bullets.remove(b)
+
+            for e in enemies[:]:
+                e.update()
+                if e.y > SCREEN_HEIGHT + 30:
+                    enemies.remove(e)
+                    continue
+
+                for b in bullets[:]:
+                    if math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius:
+                        e.hp -= b.dmg
+                        if b in bullets:
+                            bullets.remove(b)
+                        if e.hp <= 0:
+                            if e in enemies:
+                                enemies.remove(e)
+                            score += 1
+                            skill_gauge += CONFIG["GAUGE_PER_KILL"]
+                            break
+
+                if math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius:
+                    if player.shield_remain > 0:
+                        player.shield_remain = 0.0
+                        if e in enemies:
+                            enemies.remove(e)
+                    else:
+                        game_state = STATE_GAMEOVER
+
+            for b in bullets:
+                b.draw(screen)
+            for line in active_laser_lines:
+                line.draw(screen, cur_time)
+            for e in enemies:
+                e.draw(screen)
+            player.draw(screen)
+
+            sc_txt = FONT_M.render(f"SCORE: {score}", True, COLOR_WHITE)
+            screen.blit(sc_txt, (20, 20))
+
+            # 스킬 게이지 HUD
+            gx, gy, gw, gh = SCREEN_WIDTH - 150, 20, 130, 14
+            pygame.draw.rect(screen, COLOR_GRAY, (gx, gy, gw, gh), border_radius=3)
+            cur_gw = int(gw * min(1.0, skill_gauge / CONFIG["MAX_SKILL_GAUGE"]))
+            pygame.draw.rect(screen, COLOR_CYAN, (gx, gy, cur_gw, gh), border_radius=3)
+            g_lbl = FONT_LIST.render("SKILL GAUGE", True, COLOR_CYAN)
+            screen.blit(g_lbl, (gx, gy + 18))
+
+            if skill_gauge >= CONFIG["MAX_SKILL_GAUGE"]:
+                skill_gauge = 0.0
+                trigger_slot_screen()
+
+        elif game_state == STATE_SLOT:
+            # 1) 상단 옵션 리스트 및 확률 표시
+            title = FONT_L.render("ALL ENEMIES CLEARED!", True, COLOR_MAGENTA)
+            screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 40))
+
+            list_box = pygame.Rect(30, 85, SCREEN_WIDTH - 60, 175)
+            pygame.draw.rect(screen, (15, 20, 38), list_box, border_radius=8)
+            pygame.draw.rect(screen, COLOR_CYAN, list_box, 1, border_radius=8)
+
+            hdr = FONT_S.render("[ AVAILABLE OPTIONS & PROBABILITY ]", True, COLOR_CYAN)
+            screen.blit(hdr, (list_box.centerx - hdr.get_width() // 2, 95))
+
+            for idx, item in enumerate(slot_active_pool):
+                row_y = 120 + idx * 22
+                prob_str = f"({item['prob']:.1f}%)"
+                
+                # 3) 당첨된 능력치는 상단 리스트에서 하이라이트 표시
+                if slot_is_selected and item["code"] == slot_picked_code:
+                    txt_color = COLOR_YELLOW
+                    prefix = "▶ "
+                else:
+                    txt_color = (180, 190, 215)
+                    prefix = "• "
+
+                opt_surf = FONT_LIST.render(f"{prefix}{item['label']}", True, txt_color)
+                prob_surf = FONT_LIST.render(prob_str, True, txt_color)
+                screen.blit(opt_surf, (45, row_y))
+                screen.blit(prob_surf, (SCREEN_WIDTH - 45 - prob_surf.get_width(), row_y))
+
+            # 2) 슬롯 애니메이션 및 자동/수동 선택 처리
+            slot_elapsed = cur_time - slot_start_time
+
+            # 5초 초과 시 자동 선택
+            if not slot_is_selected and slot_elapsed >= CONFIG["SLOT_AUTO_PICK_TIMEOUT"] and len(slot_active_pool) > 0:
+                slot_is_selected = True
+                slot_pick_time = cur_time
+                slot_picked_code, slot_picked_label = pick_slot_reward()
+
+            slot_box = pygame.Rect(45, 330, SCREEN_WIDTH - 90, 100)
+            pygame.draw.rect(screen, (22, 28, 55), slot_box, border_radius=12)
+
+            if not slot_is_selected:
+                slot_anim_idx = int(slot_elapsed / CONFIG["SLOT_CYCLE_INTERVAL"]) % len(slot_active_pool)
+                current_display = slot_active_pool[slot_anim_idx]["label"]
+                pygame.draw.rect(screen, COLOR_YELLOW, slot_box, 3, border_radius=12)
+
+                guide = FONT_M.render("TAP / CLICK ANYWHERE TO STOP!", True, COLOR_CYAN)
+                screen.blit(guide, (SCREEN_WIDTH // 2 - guide.get_width() // 2, 455))
+
+                remain_sec = max(0, int(math.ceil(CONFIG["SLOT_AUTO_PICK_TIMEOUT"] - slot_elapsed)))
+                auto_guide = FONT_S.render(f"AUTO-PICK IN {remain_sec}s, GAME STARTS", True, COLOR_YELLOW)
+                screen.blit(auto_guide, (SCREEN_WIDTH // 2 - auto_guide.get_width() // 2, 485))
+            else:
+                # 3) 선택 완료 상태 (2초간 유지 후 인게임 복귀)
+                current_display = slot_picked_label
+                pygame.draw.rect(screen, COLOR_GREEN, slot_box, 4, border_radius=12)
+
+                chosen_lbl = FONT_L.render("SELECTED!", True, COLOR_GREEN)
+                screen.blit(chosen_lbl, (SCREEN_WIDTH // 2 - chosen_lbl.get_width() // 2, 460))
+
+                if cur_time - slot_pick_time >= CONFIG["SLOT_RESULT_DISPLAY_TIME"]:
+                    apply_slot_reward(slot_picked_code)
+                    game_state = STATE_BATTLE
+
+            disp_surf = FONT_M.render(current_display, True, COLOR_WHITE)
+            screen.blit(disp_surf, (slot_box.centerx - disp_surf.get_width() // 2, slot_box.centery - disp_surf.get_height() // 2))
+
+        elif game_state == STATE_GAMEOVER:
+            go_txt = FONT_L.render("GAME OVER", True, COLOR_MAGENTA)
+            sc_txt = FONT_M.render(f"FINAL SCORE: {score}", True, COLOR_YELLOW)
+            re_txt = FONT_S.render("CLICK ANYWHERE TO RESTART", True, COLOR_CYAN)
+            screen.blit(go_txt, (SCREEN_WIDTH // 2 - go_txt.get_width() // 2, 300))
+            screen.blit(sc_txt, (SCREEN_WIDTH // 2 - sc_txt.get_width() // 2, 350))
+            screen.blit(re_txt, (SCREEN_WIDTH // 2 - re_txt.get_width() // 2, 410))
+
+        ver_txt = FONT_VER.render(VERSION_STR, True, COLOR_VERSION_DIM)
+        screen.blit(ver_txt, (10, SCREEN_HEIGHT - 20))
+
+        pygame.display.flip()
+        await asyncio.sleep(0)
+
+if __name__ == "__main__":
+    asyncio.run(main())
