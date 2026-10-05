@@ -32,10 +32,9 @@ const nameInput = document.getElementById("name-input");
 
 const SCREEN_WIDTH = 450;
 const SCREEN_HEIGHT = 800;
-const VERSION_STR = "v20261005.Web11";
+const VERSION_STR = "v20261005.Web12";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
-// 4번 조건: 국가 코드 조회
 let userCountry = "GL";
 fetch("https://ipapi.co/json/")
   .then(res => res.json())
@@ -181,7 +180,6 @@ const CONFIG = {
   BASE_ENEMY_SPEED: 3.6,
   LASER_WEAPON_INTERVAL: 1.0,
   LASER_BEAM_LINGER_TIME: 0.2,
-  CLONE_SHIP_DURATION: 30.0,
   MAX_SKILL_GAUGE: 100.0,
   BASE_GAUGE_PER_KILL: 2.6,
   MIN_GAUGE_PER_KILL: 0.65,
@@ -534,8 +532,9 @@ class Player {
     if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
     if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
 
-    if (this.name === "Speed" && this.speedStat >= 10) {
-      const cooldown = (this.speedStat >= 15) ? 30.0 : 60.0;
+    // 5번 조건: 스피드형 기체 속도 8(60초 주기) / 16(30초 주기) 자동 보호막 부여
+    if (this.name === "Speed" && this.speedStat >= 8) {
+      const cooldown = (this.speedStat >= 16) ? 30.0 : 60.0;
       this.speedShieldTimer += dt;
       if (this.speedShieldTimer >= cooldown) {
         this.speedShieldTimer = 0;
@@ -578,9 +577,10 @@ class Player {
       }
       playTone(850, 0.07, "square", -350);
     } else if (this.pType === 2) {
+      // 5번 조건: 트윈 비행기 RATE 8(총알 4발), RATE 16(총알 8발) 증폭
       let count = 2;
-      if (this.fireRateStat >= 15) count = 8;
-      else if (this.fireRateStat >= 10) count = 4;
+      if (this.fireRateStat >= 16) count = 8;
+      else if (this.fireRateStat >= 8) count = 4;
 
       const spacing = 28 / (count - 1);
       const startX = px - 14;
@@ -589,11 +589,12 @@ class Player {
       }
       playTone(600, 0.05, "sine", -250);
     } else if (this.pType === 1) {
+      // 5번 조건: 파워형 비행기 파워 8(서브미사일 파워 50%), 파워 16(서브미사일 파워 100%)
       const isSplash = (this.powerStat % 3 === 0) && isTriggerShot;
       bullets.push(new Bullet(px, py - 24, 0, -14, dmg * 1.5, isSplash ? 9 : 7, isSplash ? "#ff2d2d" : "#ff8c00", isSplash));
 
-      if (this.powerStat >= 10) {
-        const subDmg = (this.powerStat >= 15) ? dmg : (dmg * 0.5);
+      if (this.powerStat >= 8) {
+        const subDmg = (this.powerStat >= 16) ? dmg : (dmg * 0.5);
         bullets.push(new Bullet(px - 20, py - 16, -1.2, -13, subDmg, 5, "#ff3c5a"));
         bullets.push(new Bullet(px + 20, py - 16, 1.2, -13, subDmg, 5, "#ff3c5a"));
       }
@@ -654,12 +655,6 @@ class Player {
     drawShipAt(this.x, this.y);
     if (this.clonePlaneTimer > 0) drawShipAt(this.x + 42, this.y);
 
-    // 1번 조건: 레이저, 클론쉽, 보호막의 잔여시간을 비행기 하단에 모두 표시
-    let timerLines = [];
-    if (this.laserWeaponTimer > 0) timerLines.push(`LASER ${Math.round(this.laserWeaponTimer)}s`);
-    if (this.clonePlaneTimer > 0) timerLines.push(`CLONE ${Math.round(this.clonePlaneTimer)}s`);
-    if (this.shieldRemain > 0) timerLines.push(`SHIELD ${Math.round(this.shieldRemain)}s`);
-
     if (this.shieldRemain > 0) {
       ctx.strokeStyle = "#32ff78";
       ctx.lineWidth = 2;
@@ -672,6 +667,12 @@ class Player {
         ctx.stroke();
       }
     }
+
+    // 1번 조건: 레이저, 클론쉽, 보호막의 잔여시간 소수점 첫째자리까지 표시
+    let timerLines = [];
+    if (this.laserWeaponTimer > 0) timerLines.push(`LASER ${this.laserWeaponTimer.toFixed(1)}s`);
+    if (this.clonePlaneTimer > 0) timerLines.push(`CLONE ${this.clonePlaneTimer.toFixed(1)}s`);
+    if (this.shieldRemain > 0) timerLines.push(`SHIELD ${this.shieldRemain.toFixed(1)}s`);
 
     if (timerLines.length > 0) {
       ctx.fillStyle = "#00f5ff";
@@ -711,7 +712,11 @@ let minigameRollingTime = 30;
 let minigameSelectedTime = null;
 let minigameFinishTimestamp = 0;
 
-// 2번 조건: 하단 배율 룰렛 상태
+// 4번 조건: 슬롯머신 체류 시간 보정용 변수
+let slotEnterTime = 0;
+let totalPausedDuration = 0;
+
+// 3번 조건: 하단 배율 룰렛 상태 (0.1초 순환 및 별 10개)
 const MULTIPLIER_POOL = [
   { type: "PWR", val: 1, label: "POWER +1 (x1)", col: "#ff0080" },
   { type: "PWR", val: 2, label: "POWER +2 (x2)", col: "#ff0080" },
@@ -726,6 +731,27 @@ const MULTIPLIER_POOL = [
 let shuffledMultiplierPool = [...MULTIPLIER_POOL].sort(() => Math.random() - 0.5);
 let lastMultRollTime = 0;
 let currentMultIndex = 0;
+
+// 3번 조건: 룰렛 박스 외곽에 무작위 배치된 10개의 별
+const rouletteBorderStars = Array.from({ length: 10 }, (_, i) => {
+  const t = i / 10;
+  const w = 380, h = 95;
+  const peri = 2 * (w + h);
+  const dist = t * peri;
+  let sx = 0, sy = 0;
+  if (dist < w) { sx = dist; sy = 0; }
+  else if (dist < w + h) { sx = w; sy = dist - w; }
+  else if (dist < 2 * w + h) { sx = w - (dist - (w + h)); sy = h; }
+  else { sx = 0; sy = h - (dist - (2 * w + h)); }
+
+  return {
+    relX: sx + (Math.random() * 16 - 8),
+    relY: sy + (Math.random() * 16 - 8),
+    size: 2 + Math.random() * 3.5,
+    speed: 5 + Math.random() * 6,
+    phase: Math.random() * Math.PI * 2
+  };
+});
 
 let randomCardDesign = Math.floor(Math.random() * 4);
 let lastRandomSwitch = 0;
@@ -803,6 +829,7 @@ function startBattle(type) {
 function initBattleState() {
   bullets = []; enemies = []; bossMissiles = []; bossDropItems = []; activeLasers = []; currentBoss = null;
   score = 0; skillGauge = 0.0; gaugeBoostTimer = 0.0;
+  totalPausedDuration = 0;
   startTime = performance.now() / 1000;
   lastSpawnTime = startTime;
   lastDpsCheckTime = startTime;
@@ -811,19 +838,31 @@ function initBattleState() {
   gameState = 1;
 }
 
+// 4번 조건: 슬롯머신 입장 시 체류 시작 시간 기록
 function triggerSlot() {
   enemies.forEach(e => explosions.push(new ExplosionFX(e.x, e.y, "#ff0080")));
   enemies = [];
   playSlotEnterSound();
   shuffledMultiplierPool = [...MULTIPLIER_POOL].sort(() => Math.random() - 0.5);
+  slotEnterTime = performance.now() / 1000;
   gameState = 2;
+}
+
+// 4번 조건: 슬롯머신 종료 시 일시정지 누적 시간 보정
+function resumeFromSlot() {
+  const pausedTime = (performance.now() / 1000) - slotEnterTime;
+  totalPausedDuration += pausedTime;
+  gameState = 1;
 }
 
 function applyChosenSkill(code, customDuration=null) {
   if (code === "POWER_UP") player.powerStat++;
   else if (code === "SPEED_UP") player.speedStat += (player.name === "Power" ? 0.7 : 1.0);
   else if (code === "FIRE_RATE") player.fireRateStat++;
-  else if (code === "CLONE_SHIP") player.clonePlaneTimer = CONFIG.CLONE_SHIP_DURATION;
+  else if (code === "CLONE_SHIP") {
+    // 2번 조건: 클론쉽도 시간 미니게임 적용값 설정
+    player.clonePlaneTimer = customDuration || 30.0;
+  }
   else if (code === "LASER_WEAPON") {
     player.laserWeaponTimer = customDuration || 30.5;
     player.lastLaserTime = performance.now() / 1000;
@@ -870,19 +909,26 @@ function handlePointerDown(clientX, clientY) {
     player.targetY = Math.max(player.radius + 10, Math.min(SCREEN_HEIGHT - player.radius - 10, coords.y - 120));
   } else if (gameState === 2) {
     const cards = [
-      { code: "POWER_UP", x: 35, y: 110, w: 175, h: 90 },
-      { code: "SPEED_UP", x: 240, y: 110, w: 175, h: 90 },
-      { code: "FIRE_RATE", x: 35, y: 220, w: 175, h: 90 },
-      { code: "CLONE_SHIP", x: 240, y: 220, w: 175, h: 90 },
-      { code: "LASER_WEAPON", x: 35, y: 330, w: 175, h: 90 },
-      { code: "SHIELD", x: 240, y: 330, w: 175, h: 90 }
+      { code: "POWER_UP", x: 35, y: 105, w: 175, h: 90 },
+      { code: "SPEED_UP", x: 240, y: 105, w: 175, h: 90 },
+      { code: "FIRE_RATE", x: 35, y: 215, w: 175, h: 90 },
+      { code: "CLONE_SHIP", x: 240, y: 215, w: 175, h: 90 },
+      { code: "LASER_WEAPON", x: 35, y: 325, w: 175, h: 90 },
+      { code: "SHIELD", x: 240, y: 325, w: 175, h: 90 }
     ];
 
     let clickedSkill = false;
     for (let c of cards) {
       if (coords.x >= c.x && coords.x <= c.x + c.w && coords.y >= c.y && coords.y <= c.y + c.h) {
+        // 1번 조건: 레이저가 활성화되어 있으면 선택 불가
+        if (c.code === "LASER_WEAPON" && player && player.laserWeaponTimer > 0) {
+          playTone(200, 0.15, "sawtooth", -50);
+          return;
+        }
+
         clickedSkill = true;
-        if (c.code === "LASER_WEAPON" || c.code === "SHIELD") {
+        // 2번 조건: 레이저, 쉴드 뿐만 아니라 클론쉽도 시간 선택 팝업 발동
+        if (c.code === "LASER_WEAPON" || c.code === "SHIELD" || c.code === "CLONE_SHIP") {
           minigameTargetOption = c.code;
           minigameSelectedTime = null;
           gameState = 5;
@@ -890,14 +936,14 @@ function handlePointerDown(clientX, clientY) {
         } else {
           applyChosenSkill(c.code);
           playSlotSelectedSound();
-          gameState = 1;
+          resumeFromSlot();
         }
         break;
       }
     }
 
-    // 2번 조건: 하단 대형 배율 버튼 터치 판정
-    const btnMult = { x: 35, y: 440, w: 380, h: 95 };
+    // 3번 조건: 하단 배율 버튼 위치 (y = 465)
+    const btnMult = { x: 35, y: 465, w: 380, h: 95 };
     if (!clickedSkill && coords.x >= btnMult.x && coords.x <= btnMult.x + btnMult.w && coords.y >= btnMult.y && coords.y <= btnMult.y + btnMult.h) {
       const picked = shuffledMultiplierPool[currentMultIndex];
       if (picked.type === "PWR") player.powerStat += picked.val;
@@ -905,7 +951,7 @@ function handlePointerDown(clientX, clientY) {
       else if (picked.type === "RATE") player.fireRateStat += picked.val;
 
       playSlotSelectedSound();
-      gameState = 1;
+      resumeFromSlot();
     }
   } else if (gameState === 5 && minigameSelectedTime === null) {
     minigameSelectedTime = minigameRollingTime;
@@ -1003,11 +1049,11 @@ function gameLoop(now) {
       rollR = bStats.r;
     }
 
-    // 3번 조건: 10렙, 15렙 특수 스킬 안내 문구 추가
+    // 5번 조건: 설명 문구 8렙, 16렙으로 변경
     const cards = [
-      { name: "SPEED", p: 1, s: 5, r: 1, bg: "#193c5f", bdr: "#00f5ff", y: 165, img: 0, sub: "SPECIAL SKILLS AT LV.10 & 15" },
-      { name: "POWER", p: 5, s: 1, r: 1, bg: "#5f1e2d", bdr: "#ff3c5a", y: 250, img: 1, sub: "SPECIAL SKILLS AT LV.10 & 15" },
-      { name: "TWIN", p: 1, s: 1, r: 5, bg: "#28325f", bdr: "#78a0ff", y: 335, img: 2, sub: "SPECIAL SKILLS AT LV.10 & 15" },
+      { name: "SPEED", p: 1, s: 5, r: 1, bg: "#193c5f", bdr: "#00f5ff", y: 165, img: 0, sub: "SPECIAL SKILLS AT LV.8 & 16" },
+      { name: "POWER", p: 5, s: 1, r: 1, bg: "#5f1e2d", bdr: "#ff3c5a", y: 250, img: 1, sub: "SPECIAL SKILLS AT LV.8 & 16" },
+      { name: "TWIN", p: 1, s: 1, r: 5, bg: "#28325f", bdr: "#78a0ff", y: 335, img: 2, sub: "SPECIAL SKILLS AT LV.8 & 16" },
       { name: "RANDOM", p: rollP, s: rollS, r: rollR, bg: "#461e5f", bdr: "#c832ff", y: 420, img: randomCardDesign, sub: "10% CHANCE OF LEGEND SHIP" }
     ];
 
@@ -1026,7 +1072,6 @@ function gameLoop(now) {
       ctx.font = "bold 15px Arial";
       ctx.fillText(c.name, 115, c.y + 19);
 
-      // 3번 조건 서브 텍스트
       ctx.font = "bold 9px Arial";
       ctx.fillStyle = "#00f5ff";
       ctx.fillText(c.sub, 115, c.y + 34);
@@ -1057,7 +1102,6 @@ function gameLoop(now) {
       ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
     });
 
-    // 4번 조건: Top 5 창에 [국가코드] 추가
     const t5Y = 515;
     ctx.fillStyle = "rgba(10, 15, 30, 0.65)";
     drawRoundedRect(ctx, 35, t5Y, SCREEN_WIDTH - 70, 120, 8);
@@ -1128,7 +1172,8 @@ function gameLoop(now) {
 
   // 2. BATTLE STATE
   } else if (gameState === 1) {
-    const elapsed = curTime - startTime;
+    // 4번 조건: 업그레이드 창에 있었던 시간 차감 보정
+    const elapsed = (curTime - startTime) - totalPausedDuration;
     if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
     if (player && player.isAlive) {
@@ -1261,311 +1306,4 @@ function gameLoop(now) {
             playTone(800, 0.05, "triangle");
             break;
           }
-          e.hp -= b.dmg;
-          bullets.splice(bi, 1);
-          if (e.hp <= 0) {
-            enemies.splice(ei, 1);
-            score++;
-            skillGauge += gaugePerKill;
-            explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
-            playExplosionSound();
-            break;
-          }
-        }
-      }
-
-      if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
-        if (player.shieldRemain > 0) {
-          enemies.splice(ei, 1);
-          explosions.push(new ExplosionFX(e.x, e.y, "#32ff78"));
-          playExplosionSound();
-        } else {
-          player.isAlive = false;
-          explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
-          playExplosionSound();
-          handleGameOver();
-          break;
-        }
-      }
-    }
-
-    if (currentBoss) {
-      for (let bi = bullets.length - 1; bi >= 0; bi--) {
-        const b = bullets[bi];
-        if (Math.hypot(b.x - currentBoss.x, b.y - currentBoss.y) < b.radius + currentBoss.radius) {
-          bullets.splice(bi, 1);
-          currentBoss.hp--;
-          if (currentBoss.hp <= 0) {
-            score += 20;
-            skillGauge += gaugePerKill * 3;
-            bossDropItems.push(new BossDropItem(currentBoss.x, currentBoss.y));
-            for (let k = 0; k < 4; k++) {
-              explosions.push(new ExplosionFX(currentBoss.x + (Math.random()*40-20), currentBoss.y + (Math.random()*40-20), "#ff2d2d"));
-            }
-            currentBoss = null;
-            playExplosionSound();
-            break;
-          }
-        }
-      }
-    }
-
-    if (skillGauge >= CONFIG.MAX_SKILL_GAUGE) {
-      skillGauge = 0.0;
-      triggerSlot();
-    }
-
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    // 4번 조건: 인게임 Top 10 에 [국가코드] 추가
-    ctx.fillStyle = "rgba(10, 15, 30, 0.25)";
-    ctx.fillRect(10, 10, 155, 150);
-    ctx.strokeStyle = "rgba(0, 245, 255, 0.2)";
-    ctx.strokeRect(10, 10, 155, 150);
-    ctx.fillStyle = "rgba(0, 245, 255, 0.7)";
-    ctx.font = "10px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
-    top10List.forEach((item, idx) => {
-      ctx.fillStyle = idx === 0 ? "rgba(255, 230, 0, 0.85)" : "rgba(255, 255, 255, 0.75)";
-      ctx.fillText(`${idx+1}. [${item.country || 'GL'}] ${item.name} ${item.score}`, 14, 38 + idx * 12);
-    });
-
-    activeLasers.forEach(l => {
-      ctx.strokeStyle = "#00f5ff";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(l.sx, l.sy);
-      ctx.lineTo(l.tx, l.ty);
-      ctx.stroke();
-    });
-
-    bullets.forEach(b => b.draw());
-    bossMissiles.forEach(m => m.draw());
-    bossDropItems.forEach(it => it.draw(curTime));
-    enemies.forEach(e => e.draw(curTime));
-    if (currentBoss) currentBoss.draw();
-    explosions.forEach(ex => ex.draw());
-    player.draw(curTime);
-
-    // 상단 HUD
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 15px Arial";
-    ctx.fillText(`SCORE: ${score}`, SCREEN_WIDTH - 20, 25);
-    ctx.fillStyle = "#ffe600";
-    ctx.font = "13px Arial";
-    ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, SCREEN_WIDTH - 20, 45);
-
-    // 하단 스탯 및 버전 정보
-    const baseBottomY = SCREEN_HEIGHT - 12;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, baseBottomY);
-
-    ctx.font = "12px Arial";
-    ctx.fillStyle = "#ff0080"; ctx.fillText(`POWER : Lv.${Math.round(player.powerStat)}`, 10, baseBottomY - 58);
-    ctx.fillStyle = "#00f5ff"; ctx.fillText(`SPEED : Lv.${Math.round(player.speedStat)}`, 10, baseBottomY - 42);
-    ctx.fillStyle = "#ffe600"; ctx.fillText(`RATE  : Lv.${Math.round(player.fireRateStat)}`, 10, baseBottomY - 26);
-    ctx.fillStyle = player.shieldRemain > 0 ? "#32ff78" : "#808096";
-    ctx.fillText(`SHIELD: ${player.shieldRemain > 0 ? Math.round(player.shieldRemain) + 's' : 'OFF'}`, 10, baseBottomY - 10);
-
-    // 게이지 바
-    const gw = 130, gh = 16, gx = SCREEN_WIDTH - gw - 20, gy = SCREEN_HEIGHT - 35;
-    const gPct = Math.min(1.0, skillGauge / CONFIG.MAX_SKILL_GAUGE);
-    if (gPct >= 0.8) {
-      ctx.fillStyle = "rgba(255, 230, 0, 0.3)";
-      ctx.fillRect(gx - 4, gy - 4, gw + 8, gh + 8);
-    }
-    ctx.fillStyle = "#505064";
-    ctx.fillRect(gx, gy, gw, gh);
-    ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
-    ctx.fillRect(gx, gy, gw * gPct, gh);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
-    ctx.font = "12px Arial";
-    ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
-
-  // 3. SLOT STATE
-  } else if (gameState === 2) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-    explosions.forEach(ex => ex.draw());
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "bold 22px Arial";
-    ctx.fillText("CHOOSE YOUR UPGRADE", SCREEN_WIDTH / 2, 45);
-
-    ctx.fillStyle = "#ffe600";
-    ctx.font = "13px Arial";
-    ctx.fillText("SELECT AN OPTION OR CHANCE MULTIPLIER", SCREEN_WIDTH / 2, 68);
-
-    const cards = [
-      { code: "POWER_UP", title: "POWER UP", desc: `Current Lv.${Math.round(player.powerStat)}`, col: "#ff0080", x: 35, y: 95, w: 175, h: 80 },
-      { code: "SPEED_UP", title: "SPEED UP", desc: `Current Lv.${Math.round(player.speedStat)}`, col: "#00f5ff", x: 240, y: 95, w: 175, h: 80 },
-      { code: "FIRE_RATE", title: "FIRE RATE", desc: `Current Lv.${Math.round(player.fireRateStat)}`, col: "#ffe600", x: 35, y: 195, w: 175, h: 80 },
-      { code: "CLONE_SHIP", title: "CLONE SHIP", desc: "Clone (30s)", col: "#78a0ff", x: 240, y: 195, w: 175, h: 80 },
-      { code: "LASER_WEAPON", title: "LASER GUN", desc: "Time Roulette", col: "#00f5ff", x: 35, y: 295, w: 175, h: 80 },
-      { code: "SHIELD", title: "ENERGY SHIELD", desc: "Time Roulette", col: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
-    ];
-
-    cards.forEach(c => {
-      ctx.fillStyle = "rgba(20, 25, 45, 0.85)";
-      drawRoundedRect(ctx, c.x, c.y, c.w, c.h, 10);
-      ctx.fill();
-      ctx.strokeStyle = c.col;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 14px Arial";
-      ctx.fillText(c.title, c.x + c.w / 2, c.y + 35);
-
-      ctx.fillStyle = c.col;
-      ctx.font = "12px Arial";
-      ctx.fillText(c.desc, c.x + c.w / 2, c.y + 60);
-    });
-
-    // 2번 조건: 하단 대형 룰렛 버튼 추가 (0.2초마다 순차 변경)
-    if (curTime - lastMultRollTime >= 0.20) {
-      lastMultRollTime = curTime;
-      currentMultIndex = (currentMultIndex + 1) % shuffledMultiplierPool.length;
-    }
-    const currentMultOption = shuffledMultiplierPool[currentMultIndex];
-
-    const btnMult = { x: 35, y: 400, w: 380, h: 100 };
-    ctx.fillStyle = "rgba(25, 30, 60, 0.9)";
-    drawRoundedRect(ctx, btnMult.x, btnMult.y, btnMult.w, btnMult.h, 12);
-    ctx.fill();
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ffd700";
-    ctx.font = "bold 12px Arial";
-    ctx.fillText("CHANCE: x1, x2, x3 MULTIPLIER", btnMult.x + btnMult.w / 2, btnMult.y + 25);
-
-    ctx.fillStyle = currentMultOption.col;
-    ctx.font = "bold 26px Arial";
-    ctx.fillText(currentMultOption.label, btnMult.x + btnMult.w / 2, btnMult.y + 62);
-
-    ctx.fillStyle = "#a0b0c8";
-    ctx.font = "11px Arial";
-    ctx.fillText("TAP OR CLICK TO GRAB THIS BONUS!", btnMult.x + btnMult.w / 2, btnMult.y + 86);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, SCREEN_HEIGHT - 12);
-
-  // 3-1. TIMED MINIGAME STATE
-  } else if (gameState === 5) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    const popW = 320, popH = 240;
-    const popX = SCREEN_WIDTH / 2 - popW / 2;
-    const popY = SCREEN_HEIGHT / 2 - popH / 2;
-
-    ctx.fillStyle = "rgba(15, 20, 38, 0.95)";
-    drawRoundedRect(ctx, popX, popY, popW, popH, 12);
-    ctx.fill();
-    ctx.strokeStyle = "#00f5ff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#00f5ff";
-    ctx.font = "bold 18px Arial";
-    ctx.fillText(`${minigameTargetOption === "LASER_WEAPON" ? "LASER WEAPON" : "ENERGY SHIELD"}`, SCREEN_WIDTH / 2, popY + 45);
-
-    if (minigameSelectedTime === null) {
-      minigameRollingTime = Math.floor(20 + Math.random() * 41);
-      playSlotTickSound();
-
-      ctx.fillStyle = "#ffe600";
-      ctx.font = "bold 56px Arial";
-      ctx.fillText(`${minigameRollingTime}s`, SCREEN_WIDTH / 2, popY + 125);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "13px Arial";
-      ctx.fillText("TAP OR CLICK SCREEN TO STOP!", SCREEN_WIDTH / 2, popY + 185);
-    } else {
-      ctx.fillStyle = "#32ff78";
-      ctx.font = "bold 56px Arial";
-      ctx.fillText(`${minigameSelectedTime}s`, SCREEN_WIDTH / 2, popY + 125);
-
-      ctx.fillStyle = "#32ff78";
-      ctx.font = "bold 15px Arial";
-      ctx.fillText("DURATION CONFIRMED!", SCREEN_WIDTH / 2, popY + 185);
-
-      if (curTime - minigameFinishTimestamp >= 1.2) {
-        applyChosenSkill(minigameTargetOption, minigameSelectedTime);
-        gameState = 1;
-      }
-    }
-
-  // 4. GAMEOVER STATE
-  } else if (gameState === 3) {
-    ctx.fillStyle = "#080814";
-    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-    stars.forEach(s => s.draw());
-
-    const popY = SCREEN_HEIGHT * 0.3;
-    ctx.fillStyle = "#14192d";
-    drawRoundedRect(ctx, SCREEN_WIDTH / 2 - 160, popY - 20, 320, 220, 14);
-    ctx.fill();
-    ctx.strokeStyle = "#ff0080";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#ff0080";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("GAME OVER", SCREEN_WIDTH / 2, popY + 15);
-    ctx.fillStyle = "#ffe600";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(`FINAL SCORE: ${score}`, SCREEN_WIDTH / 2, popY + 45);
-
-    ctx.fillStyle = "#00f5ff";
-    drawRoundedRect(ctx, SCREEN_WIDTH / 2 - 90, popY + 125, 180, 42, 8);
-    ctx.fill();
-    ctx.fillStyle = "#14192d";
-    ctx.font = "bold 15px Arial";
-    ctx.fillText("SUBMIT & RESTART", SCREEN_WIDTH / 2, popY + 151);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#46465a";
-    ctx.font = "11px monospace";
-    ctx.fillText(VERSION_STR, 10, SCREEN_HEIGHT - 12);
-  }
-
-  requestAnimationFrame(gameLoop);
-}
-
-function handleGameOver() {
-  setTimeout(() => {
-    if (isEligibleForTop10(score)) {
-      gameState = 3;
-      nameInputOverlay.style.display = "block";
-      nameInput.value = "";
-      nameInput.focus();
-    } else {
-      gameState = 0;
-    }
-  }, 800);
-}
-
-requestAnimationFrame(gameLoop);
-</script>
-</body>
-</html>
+          e.hp -= b.dmg
