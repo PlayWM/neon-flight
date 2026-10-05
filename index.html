@@ -32,13 +32,19 @@ const nameInput = document.getElementById("name-input");
 
 const SCREEN_WIDTH = 450;
 const SCREEN_HEIGHT = 800;
-const VERSION_STR = "v20261005.Web07";
+const VERSION_STR = "v20261005.Web08";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
-// --- [Web Audio API 사운드 신시사이저] ---
+// --- [Web Audio API 사운드 신시사이저 & BGM 엔진] ---
 let audioCtx = null;
+let bgmInterval = null;
+let bgmStep = 0;
+
 function initAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    startBGM();
+  }
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
@@ -77,6 +83,71 @@ function playExplosionSound() {
     gain.connect(audioCtx.destination);
     src.start(now);
   } catch(e){}
+}
+
+// 1) 배경음악(BGM) 루프 신시사이저
+function startBGM() {
+  if (bgmInterval) return;
+  const notes = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63, 293.66, 329.63]; // C Pentatonic
+  const bassNotes = [65.41, 73.42, 82.41, 98.00];
+
+  bgmInterval = setInterval(() => {
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    const now = audioCtx.currentTime;
+
+    // 베이스 비트
+    if (bgmStep % 4 === 0) {
+      const bOsc = audioCtx.createOscillator();
+      const bGain = audioCtx.createGain();
+      bOsc.type = "sawtooth";
+      bOsc.frequency.setValueAtTime(bassNotes[(bgmStep / 4) % bassNotes.length], now);
+      bGain.gain.setValueAtTime(0.05, now);
+      bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      bOsc.connect(bGain);
+      bGain.connect(audioCtx.destination);
+      bOsc.start(now);
+      bOsc.stop(now + 0.35);
+    }
+
+    // 멜로디 아르페지오
+    if (bgmStep % 2 === 0) {
+      const mOsc = audioCtx.createOscillator();
+      const mGain = audioCtx.createGain();
+      mOsc.type = "sine";
+      const noteIdx = (bgmStep * 3 + 2) % notes.length;
+      mOsc.frequency.setValueAtTime(notes[noteIdx], now);
+      mGain.gain.setValueAtTime(0.035, now);
+      mGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      mOsc.connect(mGain);
+      mGain.connect(audioCtx.destination);
+      mOsc.start(now);
+      mOsc.stop(now + 0.2);
+    }
+
+    bgmStep = (bgmStep + 1) % 64;
+  }, 130);
+}
+
+// 2 & 3) 전용 효과음들
+function playShipSelectSound() {
+  playTone(330, 0.1, "triangle", 220, 0.25);
+  setTimeout(() => playTone(550, 0.2, "triangle", 330, 0.3), 80);
+}
+
+function playSlotEnterSound() {
+  playTone(440, 0.12, "triangle", 200, 0.25);
+  setTimeout(() => playTone(659, 0.15, "triangle", 250, 0.3), 100);
+  setTimeout(() => playTone(880, 0.25, "sine", 0, 0.35), 220);
+}
+
+function playSlotTickSound() {
+  playTone(950, 0.03, "square", -200, 0.08);
+}
+
+function playSlotSelectedSound() {
+  playTone(523, 0.15, "triangle", 0, 0.3);
+  setTimeout(() => playTone(659, 0.15, "triangle", 0, 0.3), 120);
+  setTimeout(() => playTone(784, 0.35, "sine", 150, 0.35), 240);
 }
 
 // --- [게임 설정 & 밸런스] ---
@@ -602,6 +673,9 @@ let lastRollTime = 0;
 let rollP = 1, rollS = 1, rollR = 1;
 let isTouchActive = false;
 
+// 4) 키보드 조작 상태 관리
+const keysPressed = {};
+
 // Firebase 리더보드
 async function fetchTop10() {
   try {
@@ -629,6 +703,8 @@ async function uploadScore(name, finalScore) {
 
 function startBattle(type) {
   initAudio();
+  playShipSelectSound(); // 2) 비행기 선택 효과음
+
   if (type === 3) {
     if (Math.random() < 0.08) {
       player = new Player(4, "Legend", 3, 1.5, 3);
@@ -665,6 +741,7 @@ function triggerSlot() {
   slotIsSelected = false;
   slotPicked = null;
   slotStartTime = performance.now() / 1000;
+  playSlotEnterSound(); // 3) 슬롯머신 입장 사운드
 
   const isLegend = (player.name === "Legend");
   const specialWeight = isLegend ? 0.4 : 1.1;
@@ -681,7 +758,6 @@ function triggerSlot() {
     slotPool.push({ code: "CLONE_SHIP", label: "CLONE SHIP (30s)", weight: specialWeight });
   }
 
-  // 1번 조건: 전체 옵션 뽑기 확률 계산 (소수점 한자리)
   const totalWeight = slotPool.reduce((acc, cur) => acc + cur.weight, 0);
   slotPool.forEach(opt => {
     opt.prob = ((opt.weight / totalWeight) * 100).toFixed(1);
@@ -744,12 +820,11 @@ function handlePointerDown(clientX, clientY) {
   } else if (gameState === 1 && player) {
     player.targetX = coords.x;
     player.targetY = Math.max(player.radius + 10, Math.min(SCREEN_HEIGHT - player.radius - 10, coords.y - 120));
-  // 2번 조건: 슬롯머신 돌아가는 중 클릭/터치 시 즉시 랜덤 선택
   } else if (gameState === 2 && !slotIsSelected) {
     slotIsSelected = true;
     slotPickTime = performance.now() / 1000;
     slotPicked = pickSlotRewardWeighted();
-    playTone(659, 0.25, "triangle", 150);
+    playSlotSelectedSound(); // 3) 옵션 선택 완료 사운드
   } else if (gameState === 3) {
     const btnRect = { x: SCREEN_WIDTH / 2 - 90, y: SCREEN_HEIGHT * 0.3 + 125, w: 180, h: 42 };
     if (coords.x >= btnRect.x && coords.x <= btnRect.x + btnRect.w && coords.y >= btnRect.y && coords.y <= btnRect.y + btnRect.h) {
@@ -769,6 +844,18 @@ function handlePointerUp() {
   }
 }
 
+// 4) 키보드 이벤트 리스너 등록
+window.addEventListener("keydown", e => {
+  initAudio();
+  keysPressed[e.key.toLowerCase()] = true;
+  keysPressed[e.code] = true;
+});
+window.addEventListener("keyup", e => {
+  keysPressed[e.key.toLowerCase()] = false;
+  keysPressed[e.code] = false;
+});
+
+// 마우스 & 터치 이벤트 리스너 등록
 window.addEventListener("mousemove", e => { if (e.buttons === 1) handlePointerMove(e.clientX, e.clientY); });
 window.addEventListener("mousedown", e => handlePointerDown(e.clientX, e.clientY));
 window.addEventListener("mouseup", handlePointerUp);
@@ -795,6 +882,7 @@ canvas.addEventListener("touchcancel", e => {
 
 // --- [메인 루프] ---
 let lastTime = performance.now();
+let lastSlotTickTime = 0;
 
 function gameLoop(now) {
   const curTime = now / 1000;
@@ -954,14 +1042,40 @@ function gameLoop(now) {
     const elapsed = curTime - startTime;
     if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
+    // 4) 키보드 입력(WASD, 방향키) 실시간 반영
+    if (player && player.isAlive) {
+      let kx = 0, ky = 0;
+      if (keysPressed["arrowleft"] || keysPressed["a"] || keysPressed["keya"]) kx -= 1;
+      if (keysPressed["arrowright"] || keysPressed["d"] || keysPressed["keyd"]) kx += 1;
+      if (keysPressed["arrowup"] || keysPressed["w"] || keysPressed["keyw"]) ky -= 1;
+      if (keysPressed["arrowdown"] || keysPressed["s"] || keysPressed["keys"]) ky += 1;
+
+      if (kx !== 0 || ky !== 0) {
+        const moveDist = player.getRealSpeed() * 60 * dt;
+        player.targetX = Math.max(player.radius + 10, Math.min(SCREEN_WIDTH - player.radius - 10, player.targetX + kx * moveDist));
+        player.targetY = Math.max(player.radius + 10, Math.min(SCREEN_HEIGHT - player.radius - 10, player.targetY + ky * moveDist));
+      }
+    }
+
     player.update(dt);
     player.shoot(curTime, bullets);
 
-    const isEarlyPhase = (elapsed < 60.0);
-    const speedScale = isEarlyPhase ? 0.5 : 1.0;
-    const widthScale = isEarlyPhase ? 0.5 : 1.0;
-    const hpScale = isEarlyPhase ? 0.7 : 1.0;
-    const earlyGaugeMultiplier = isEarlyPhase ? 1.5 : 1.0;
+    // 5) 60초 감속 이후 30초마다 20%씩 부드럽게 속도 회복 (점진적 회복 공식)
+    // 0~60s: 0.5배 (50% 감속)
+    // 60s 이후: 30초당 0.2씩 점진적 복구 -> Math.min(1.0, 0.5 + ((elapsed - 60) / 30) * 0.2)
+    let speedScale = 1.0;
+    let widthScale = 1.0;
+    if (elapsed < 60.0) {
+      speedScale = 0.5;
+      widthScale = 0.5;
+    } else {
+      const recoveredRatio = Math.min(1.0, 0.5 + ((elapsed - 60.0) / 30.0) * 0.2);
+      speedScale = recoveredRatio;
+      widthScale = recoveredRatio;
+    }
+
+    const hpScale = (elapsed < 60.0) ? 0.7 : 1.0;
+    const earlyGaugeMultiplier = (elapsed < 60.0) ? 1.5 : 1.0;
 
     const steps30s = Math.floor(elapsed / 30);
     const baseGaugePerKill = Math.max(CONFIG.MIN_GAUGE_PER_KILL, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.92, steps30s));
@@ -1160,7 +1274,7 @@ function gameLoop(now) {
     ctx.font = "13px Arial";
     ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, SCREEN_WIDTH - 20, 45);
 
-    // 하단 정보 표시
+    // 하단 스탯 및 버전 정보
     const baseBottomY = SCREEN_HEIGHT - 12;
     ctx.textAlign = "left";
     ctx.fillStyle = "#46465a";
@@ -1205,15 +1319,13 @@ function gameLoop(now) {
 
     const slotElapsed = curTime - slotStartTime;
 
-    // 2번 조건: 5초 경과 시 자동 선택 (랜덤 가중치 뽑기)
     if (!slotIsSelected && slotElapsed >= CONFIG.SLOT_AUTO_PICK_TIMEOUT) {
       slotIsSelected = true;
       slotPickTime = curTime;
       slotPicked = pickSlotRewardWeighted();
-      playTone(659, 0.25, "triangle", 150);
+      playSlotSelectedSound(); // 3) 선택 완료 사운드
     }
 
-    // 1번 & 3번 조건: 상단 전체 옵션 목록 & 확률(소수점 한자리) 노출 + 당첨 시 하이라이트 박스 표시
     const boxW = SCREEN_WIDTH - 50;
     const boxH = 140;
     const boxX = 25;
@@ -1239,7 +1351,6 @@ function gameLoop(now) {
       const itemX = boxX + 16 + col * 195;
       const itemY = boxY + 45 + row * 28;
 
-      // 3번 조건: 당첨된 옵션은 상단 리스트에서 네모 박스로 강조
       const isChosen = (slotIsSelected && slotPicked && slotPicked.code === opt.code);
       if (isChosen) {
         ctx.fillStyle = "rgba(50, 255, 120, 0.25)";
@@ -1260,14 +1371,18 @@ function gameLoop(now) {
       ctx.fillText(`- ${opt.label} (${opt.prob}%)`, itemX, itemY);
     });
 
-    // 중앙 룰렛 박스
     let dispLabel = "";
     if (!slotIsSelected) {
       const idx = Math.floor(slotElapsed / CONFIG.SLOT_CYCLE_INTERVAL) % slotPool.length;
       dispLabel = slotPool[idx].label;
+
+      // 3) 룰렛 옵션 돌아가는 틱 소리
+      if (curTime - lastSlotTickTime >= CONFIG.SLOT_CYCLE_INTERVAL) {
+        lastSlotTickTime = curTime;
+        playSlotTickSound();
+      }
     } else {
       dispLabel = slotPicked.label;
-      // 3번 조건: 2초간 결과 유지 후 전투 복귀
       if (curTime - slotPickTime >= CONFIG.SLOT_RESULT_DISPLAY_TIME) {
         applySlotReward(slotPicked.code);
         gameState = 1;
@@ -1287,7 +1402,6 @@ function gameLoop(now) {
     ctx.textAlign = "center";
     ctx.fillText(dispLabel, SCREEN_WIDTH / 2, 362);
 
-    // 2번 조건: 카운트다운 및 영문 안내 문구
     if (!slotIsSelected) {
       ctx.fillStyle = "#00f5ff";
       ctx.font = "bold 15px Arial";
