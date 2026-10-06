@@ -1346,7 +1346,9 @@ function safeGameLoop(now) {
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+    // 투명화 대신 검은 우주 배경 직접 드로잉
+    ctx.fillStyle = "#080814";
+    ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
     stars.forEach(s => s.update());
     
@@ -2041,7 +2043,13 @@ function safeGameLoop(now) {
     }
   } catch(err){}
 
+window.addEventListener("DOMContentLoaded", () => {
   requestAnimationFrame(safeGameLoop);
+});
+// 혹시 이미 DOM이 로드된 경우 즉시 실행 보장
+if (document.readyState === "complete" || document.readyState === "interactive") {
+  requestAnimationFrame(safeGameLoop);
+}
 }
 
 function handleGameOver() {
