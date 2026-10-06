@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web22";
+const VERSION_STR = "v20261006.Web23";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -79,7 +79,7 @@ function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
 }
 
 // =================================================================
-// 2. 국가 및 리더보드 (오프라인/에러 시에도 절대 멈추지 않음)
+// 2. 국가 및 리더보드
 // =================================================================
 let userCountry = "Global";
 let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
@@ -793,7 +793,8 @@ class Player {
     const reduction = 1.0 / (1.0 + (this.fireRateStat - 1) * reductionFactor);
     let base = CONFIG.BASE_FIRE_INTERVAL;
     if (this.name === "Speed" || this.name === "Power") base *= 1.30;
-    if (this.name === "Legend") base *= 1.625;
+    // 수정 5: 레전드 비행기 총알 발사 속도 20% 증가 (주기 20% 단축: 1.625 -> 1.30)
+    if (this.name === "Legend") base *= 1.30;
     return Math.max(0.03, base * reduction);
   }
   update(dt, enemiesList, lightningList, bulletsList) {
@@ -862,9 +863,12 @@ class Player {
   _fire(px, py, dmg, bullets) {
     const trait = this.getDominantTrait();
 
-    if (trait === "RATE" && this.shotCount % 5 === 0) {
-      for (let i = 0; i < 18; i++) {
-        const rad = (i * 20) * (Math.PI / 180);
+    // 수정 3: 발사속도빠른 비행기 360도 전방향 탄환 횟수 2배 느리게 (5발마다 -> 10발마다), 수량 20% 감소 (18발 -> 14발)
+    if (trait === "RATE" && this.shotCount % 10 === 0) {
+      const bulletCount = 14;
+      const angleStep = (Math.PI * 2) / bulletCount;
+      for (let i = 0; i < bulletCount; i++) {
+        const rad = i * angleStep;
         bullets.push(new Bullet(px, py - 10, Math.sin(rad) * 13, -Math.cos(rad) * 13, dmg * 0.9, 3.8, "#ffe600"));
       }
       playTone(720, 0.12, "sine", 120);
@@ -1047,10 +1051,13 @@ const PERIMETER_W = 380;
 const PERIMETER_H = 95;
 const TOTAL_PERIMETER = (PERIMETER_W + PERIMETER_H) * 2;
 
-const ORBIT_STARS = Array.from({ length: 12 }, () => ({
+// 수정 2: 별 최대 크기 30% 감소 (0.7배), 다채로운 색상 팔레트 추가
+const STAR_PALETTE = ["#ffd700", "#00f5ff", "#ff0080", "#32ff78", "#ff8c00", "#c832ff", "#ffffff"];
+const ORBIT_STARS = Array.from({ length: 12 }, (_, i) => ({
   dist: Math.random() * TOTAL_PERIMETER,
-  size: (3 + Math.random() * 4) * 4.0,
-  speed: (Math.random() < 0.5 ? 1 : -1) * (30 + Math.random() * 50)
+  size: (3 + Math.random() * 4) * 4.0 * 0.7,
+  speed: (Math.random() < 0.5 ? 1 : -1) * (30 + Math.random() * 50),
+  color: STAR_PALETTE[i % STAR_PALETTE.length]
 }));
 
 function getPerimeterPoint(boxX, boxY, dist) {
@@ -1156,7 +1163,7 @@ function startBattle(type) {
   sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 
   if (type === 3) {
-    if (Math.random() < 0.08) {
+    if (Math.random() < 0.10) {
       player = new Player(4, "Legend", 3, 1.5, 3);
       gameState = 4;
       legendShowcaseStartTime = performance.now() / 1000;
@@ -1211,7 +1218,7 @@ function applyChosenSkill(code, customDuration=null) {
 }
 
 // =================================================================
-// 7. 통합 사용자 입력 리스너 (정확한 좌표 정합)
+// 7. 통합 사용자 입력 리스너
 // =================================================================
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -1339,7 +1346,6 @@ function safeGameLoop(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
 
-  // 검은 우주 배경 직접 칠하기
   ctx.fillStyle = "#080814";
   ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
@@ -1474,7 +1480,7 @@ function safeGameLoop(now) {
     ctx.font = `bold 11px ${FONT_FAMILY}`;
     ctx.fillText(VERSION_STR, 10, LOGICAL_HEIGHT - 12);
 
-  // 1-1. 레전드 연출
+  // 1-1. 레전드 쇼케이스 연출
   } else if (gameState === 4) {
     const elapsedShowcase = curTime - legendShowcaseStartTime;
     const remainSec = Math.max(0, (3.0 - elapsedShowcase).toFixed(1));
@@ -1827,33 +1833,35 @@ function safeGameLoop(now) {
     ctx.fillText("SELECT AN OPTION OR CHANCE MULTIPLIER", LOGICAL_WIDTH / 2, 68);
 
     const cards = [
-      { code: "POWER_UP", title: "POWER UP", desc: `Current Lv.${Math.round(player.powerStat)}`, col: "#ff0080", x: 35, y: 95, w: 175, h: 80 },
-      { code: "SPEED_UP", title: "SPEED UP", desc: `Current Lv.${Math.round(player.speedStat)}`, col: "#00f5ff", x: 240, y: 95, w: 175, h: 80 },
-      { code: "FIRE_RATE", title: "FIRE RATE", desc: `Current Lv.${Math.round(player.fireRateStat)}`, col: "#ffe600", x: 35, y: 195, w: 175, h: 80 },
-      { code: "CLONE_SHIP", title: "CLONE SHIP", desc: "Clone (30s)", col: "#78a0ff", x: 240, y: 195, w: 175, h: 80 },
-      { code: "LASER_WEAPON", title: "LASER GUN", desc: "Time Roulette", col: "#00f5ff", x: 35, y: 295, w: 175, h: 80 },
-      { code: "SHIELD", title: "ENERGY SHIELD", desc: "Time Roulette", col: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
+      { code: "POWER_UP", title: "POWER UP", desc: `Current Lv.${Math.round(player.powerStat)}`, col: "#00f5ff", subCol: "#ff0080", x: 35, y: 95, w: 175, h: 80 },
+      { code: "SPEED_UP", title: "SPEED UP", desc: `Current Lv.${Math.round(player.speedStat)}`, col: "#00f5ff", subCol: "#00f5ff", x: 240, y: 95, w: 175, h: 80 },
+      { code: "FIRE_RATE", title: "FIRE RATE", desc: `Current Lv.${Math.round(player.fireRateStat)}`, col: "#64aaff", subCol: "#ffe600", x: 35, y: 195, w: 175, h: 80 },
+      { code: "CLONE_SHIP", title: "CLONE SHIP", desc: "Clone (30s)", col: "#78a0ff", subCol: "#78a0ff", x: 240, y: 195, w: 175, h: 80 },
+      { code: "LASER_WEAPON", title: "LASER GUN", desc: "Time Roulette", col: "#32ff78", subCol: "#00f5ff", x: 35, y: 295, w: 175, h: 80 },
+      { code: "SHIELD", title: "ENERGY SHIELD", desc: "Time Roulette", col: "#32ff78", subCol: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
     ];
 
+    // 수정 1: 6개 항목 모두 정확한 위치(c.x)에 둥근 외곽선 박스 렌더링 및 텍스트 선명화
     cards.forEach(c => {
-      ctx.fillStyle = "rgba(20, 25, 45, 0.85)";
-      drawRoundRect(ctx, 35, c.y, c.w, c.h, 10);
+      ctx.fillStyle = "rgba(10, 15, 30, 0.85)";
+      drawRoundRect(ctx, c.x, c.y, c.w, c.h, 10);
       ctx.fill();
       ctx.strokeStyle = c.col;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold 14px ${FONT_FAMILY}`;
+      ctx.font = `bold 16px ${FONT_FAMILY}`;
       ctx.fillText(c.title, c.x + c.w / 2, c.y + 35);
 
-      ctx.fillStyle = c.col;
-      ctx.font = `12px ${FONT_FAMILY}`;
+      ctx.fillStyle = c.subCol;
+      ctx.font = `bold 13px ${FONT_FAMILY}`;
       ctx.fillText(c.desc, c.x + c.w / 2, c.y + 60);
     });
 
-    if (curTime - lastMultRollTime >= 0.04) {
+    // 수정 4: 하단 뽑기 옵션 순환 속도 20% 지연 (0.04초 -> 0.048초)
+    if (curTime - lastMultRollTime >= 0.048) {
       lastMultRollTime = curTime;
       currentMultIndex = (currentMultIndex + 1) % shuffledMultiplierPool.length;
     }
@@ -1867,13 +1875,14 @@ function safeGameLoop(now) {
     ctx.lineWidth = 3;
     ctx.stroke();
 
+    // 수정 2: 별 크기 변화 속도 2배 빠르게 (sin 주기 10.0 -> 20.0), 별 색상 다양화
     ORBIT_STARS.forEach((st, idx) => {
       st.dist += st.speed * dt;
       const pt = getPerimeterPoint(btnMult.x, btnMult.y, st.dist);
-      const pulse = Math.sin(curTime * 10.0 + idx) * 0.25 + 0.75;
+      const pulse = Math.sin(curTime * 20.0 + idx) * 0.25 + 0.75;
 
       ctx.save();
-      ctx.fillStyle = idx % 2 === 0 ? "#ffd700" : "#00f5ff";
+      ctx.fillStyle = st.color;
       drawStarShape(ctx, pt.x, pt.y, 5, st.size * pulse, st.size * pulse * 0.45);
       ctx.fill();
       ctx.restore();
