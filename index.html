@@ -32,27 +32,54 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web20";
+const VERSION_STR = "v20261006.Web21";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
-
-// 폰트 깨짐 방지용 공통 글꼴 스택
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif";
 
-// 캔버스 크기 안정화 (깜빡임 원인 제거: 논리 좌표계와 캔버스 버퍼를 1:1로 확정)
+// 캔버스 버퍼 및 뷰포트 고정 (렌더링 에러 차단)
 canvas.width = LOGICAL_WIDTH;
 canvas.height = LOGICAL_HEIGHT;
 
-try {
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-} catch(e){}
+function drawRoundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
+  let rot = Math.PI / 2 * 3;
+  let x = cx, y = cy;
+  let step = Math.PI / spikes;
+  c.beginPath();
+  c.moveTo(cx, cy - outerRadius);
+  for (let i = 0; i < spikes; i++) {
+    x = cx + Math.cos(rot) * outerRadius;
+    y = cy + Math.sin(rot) * outerRadius;
+    c.lineTo(x, y);
+    rot += step;
+    x = cx + Math.cos(rot) * innerRadius;
+    y = cy + Math.sin(rot) * innerRadius;
+    c.lineTo(x, y);
+    rot += step;
+  }
+  c.lineTo(cx, cy - outerRadius);
+  c.closePath();
+}
 
 // =================================================================
 // 2. 보안, 무결성 검증 및 국가 식별 모듈
 // =================================================================
 let userCountry = "Global";
 let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
-let sessionStartTime = 0;
+let sessionStartTime = performance.now();
 
 function sanitizeText(str) {
   if (!str) return "Unknown";
@@ -117,7 +144,7 @@ async function uploadScore(name, finalScore) {
 }
 
 // =================================================================
-// 3. Web Audio 사운드 합성 및 BGM 엔진
+// 3. Web Audio 사운드 합성 엔진
 // =================================================================
 let audioCtx = null;
 let bgmInterval = null;
@@ -243,42 +270,27 @@ function playSlotSelectedSound() {
 }
 
 // =================================================================
-// 4. 그래픽 드로잉 및 도트 렌더러
+// 4. 게임 데이터 및 스프라이트
 // =================================================================
-function drawRoundRect(c, x, y, w, h, r) {
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.lineTo(x + w - r, y);
-  c.quadraticCurveTo(x + w, y, x + w, y + r);
-  c.lineTo(x + w, y + h - r);
-  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  c.lineTo(x + r, y + h);
-  c.quadraticCurveTo(x, y + h, x, y + h - r);
-  c.lineTo(x, y + r);
-  c.quadraticCurveTo(x, y, x + r, y);
-  c.closePath();
-}
-
-function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
-  let rot = Math.PI / 2 * 3;
-  let x = cx, y = cy;
-  let step = Math.PI / spikes;
-
-  c.beginPath();
-  c.moveTo(cx, cy - outerRadius);
-  for (let i = 0; i < spikes; i++) {
-    x = cx + Math.cos(rot) * outerRadius;
-    y = cy + Math.sin(rot) * outerRadius;
-    c.lineTo(x, y);
-    rot += step;
-    x = cx + Math.cos(rot) * innerRadius;
-    y = cy + Math.sin(rot) * innerRadius;
-    c.lineTo(x, y);
-    rot += step;
-  }
-  c.lineTo(cx, cy - outerRadius);
-  c.closePath();
-}
+const CONFIG = {
+  BASE_PLAYER_SPEED: 6.24,
+  STAT_SPEED_FACTOR: 0.65,
+  BASE_FIRE_INTERVAL: 0.324,
+  FIRE_RATE_REDUCTION: 0.05,
+  HIT_PROBABILITY: 0.50,
+  TARGET_HP_PRESSURE_RATIO: 0.85,
+  MIN_SPAWN_INTERVAL: 0.05,
+  MAX_SPAWN_INTERVAL: 0.30,
+  MAX_ENEMY_HP_CAP: 30,
+  BASE_ENEMY_SPEED: 3.6,
+  LASER_WEAPON_INTERVAL: 1.0,
+  LASER_BEAM_LINGER_TIME: 0.1,
+  CLONE_SHIP_DURATION: 30.0,
+  MAX_SKILL_GAUGE: 100.0,
+  BASE_GAUGE_PER_KILL: 2.6,
+  MIN_GAUGE_PER_KILL: 0.65,
+  GAUGE_BOOST_DURATION: 20.0
+};
 
 const PIXEL_PLAYERS = {
   0: [[0,0,0,0,0,1,1,0,0,0,0,0],[0,0,0,0,1,2,2,1,0,0,0,0],[0,0,0,1,1,2,2,1,1,0,0,0],[0,0,1,1,3,2,2,3,1,1,0,0],[0,1,1,1,3,2,2,3,1,1,1,0],[1,1,0,1,1,3,3,1,1,0,1,1],[1,0,0,1,1,1,1,1,1,0,0,1],[1,0,1,1,1,4,4,1,1,1,0,1],[0,0,1,0,4,0,0,4,0,1,0,0]],
@@ -324,7 +336,7 @@ function drawMatrix(matrix, cx, cy, colorMap, psize=3) {
 }
 
 // =================================================================
-// 5. 게임 엔티티 클래스
+// 5. 엔티티 클래스
 // =================================================================
 class Star {
   constructor() {
@@ -563,8 +575,6 @@ class LightningBolt {
 
     ctx.strokeStyle = "#00f5ff";
     ctx.lineWidth = 4;
-    ctx.shadowColor = "#00f5ff";
-    ctx.shadowBlur = 15;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.stroke();
@@ -983,8 +993,6 @@ class Player {
         ctx.save();
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 4;
-        ctx.shadowColor = "#00f5ff";
-        ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius + 20, -Math.PI * 0.83, -Math.PI * 0.17);
         ctx.stroke();
@@ -1046,13 +1054,43 @@ class Player {
 }
 
 // =================================================================
-// 6. 상태 관리 및 룰렛 파라미터
+// 6. 상태 및 룰렛 파라미터 초기화
 // =================================================================
+let stars = Array.from({ length: 65 }, () => new Star());
+let comets = Array.from({ length: 3 }, () => new Comet());
+let lastCometSpawnCheck = 0;
+
+let player = null;
+let bullets = [];
+let enemies = [];
+let bossMissiles = [];
+let bossDropItems = [];
+let lightningBolts = [];
+let blackHoles = [];
+let currentBoss = null;
+let explosions = [];
+let activeLasers = [];
+
+let gameState = 0;
+let legendShowcaseStartTime = 0;
+
+let score = 0;
+let skillGauge = 0.0;
+let inGameElapsedTime = 0;
+let lastSpawnTime = 0;
+let nextBossTargetTime = 90.0;
+let gaugeBoostTimer = 0.0;
+
+let minigameTargetOption = null;
+let minigameRollingTime = 30;
+let minigameSelectedTime = null;
+let minigameFinishTimestamp = 0;
+
 const PERIMETER_W = 380;
 const PERIMETER_H = 95;
 const TOTAL_PERIMETER = (PERIMETER_W + PERIMETER_H) * 2;
 
-const ORBIT_STARS = Array.from({ length: 12 }, (_, i) => ({
+const ORBIT_STARS = Array.from({ length: 12 }, () => ({
   dist: Math.random() * TOTAL_PERIMETER,
   size: (3 + Math.random() * 4) * 4.0,
   speed: (Math.random() < 0.5 ? 1 : -1) * (30 + Math.random() * 50)
@@ -1085,7 +1123,6 @@ function generateNonConsecutivePool() {
   const pwr = MULTIPLIER_POOL.filter(i => i.type === "PWR").sort(() => Math.random() - 0.5);
   const spd = MULTIPLIER_POOL.filter(i => i.type === "SPD").sort(() => Math.random() - 0.5);
   const rate = MULTIPLIER_POOL.filter(i => i.type === "RATE").sort(() => Math.random() - 0.5);
-  
   const pool = [];
   const order = [["PWR", pwr], ["SPD", spd], ["RATE", rate]].sort(() => Math.random() - 0.5);
   for (let k = 0; k < 3; k++) {
@@ -1185,11 +1222,11 @@ function applyChosenSkill(code, customDuration=null) {
 }
 
 // =================================================================
-// 7. 통합 포인터 입력 처리 (깜빡임 및 선택 불가 버그 해결)
+// 7. 통합 사용자 입력 리스너 (정확한 좌표 정합)
 // =================================================================
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 };
+  if (!rect.width || !rect.height) return { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 };
   const scaleX = LOGICAL_WIDTH / rect.width;
   const scaleY = LOGICAL_HEIGHT / rect.height;
   const x = Math.max(0, Math.min(LOGICAL_WIDTH, (clientX - rect.left) * scaleX));
@@ -1203,7 +1240,6 @@ function handlePointerDown(e) {
   const coords = getCanvasCoords(e.clientX, e.clientY);
 
   if (gameState === 0) {
-    // 4개 비행기 카드 박스 선택 영역 (x: 35~415)
     if (coords.x >= 35 && coords.x <= 415) {
       if (coords.y >= 165 && coords.y <= 240) startBattle(0);
       else if (coords.y >= 250 && coords.y <= 325) startBattle(1);
@@ -1286,7 +1322,6 @@ function handlePointerUp() {
   }
 }
 
-// 표준 단일 포인터 이벤트 리스너 (터치, 마우스 중복 호출 차단)
 canvas.addEventListener("pointerdown", handlePointerDown);
 window.addEventListener("pointermove", handlePointerMove);
 window.addEventListener("pointerup", handlePointerUp);
@@ -1303,7 +1338,7 @@ window.addEventListener("keyup", e => {
 });
 
 // =================================================================
-// 8. 메인 프레임 렌더링 루프
+// 8. 렌더링 프레임 루프
 // =================================================================
 function safeGameLoop(now) {
   try {
@@ -1311,7 +1346,6 @@ function safeGameLoop(now) {
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    // 캔버스 초기화
     ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
     stars.forEach(s => s.update());
@@ -1865,8 +1899,6 @@ function safeGameLoop(now) {
 
         ctx.save();
         ctx.fillStyle = idx % 2 === 0 ? "#ffd700" : "#00f5ff";
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 10;
         drawStarShape(ctx, pt.x, pt.y, 5, st.size * pulse, st.size * pulse * 0.45);
         ctx.fill();
         ctx.restore();
