@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web28";
+const VERSION_STR = "v20261007.Web01";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -892,7 +892,7 @@ ctx.fill();
 }
 
 class Enemy {
-constructor(maxHp, baseSpeed, designId, hasShield=false) {
+constructor(maxHp, baseSpeed, designId, hasShield=false, isHeavy=false) {
 this.originX = 40 + Math.random() * (LOGICAL_WIDTH - 80);
 this.x = this.originX;
 this.y = -40;
@@ -910,6 +910,7 @@ this.diveTriggered = false;
 this.designId = designId;
 this.radius = maxHp <= 8 ? 20 : (maxHp <= 18 ? 25 : 30);
 this.hasShield = hasShield; // 2. 보호막 보유 플래그
+this.isHeavy = isHeavy; // 체력 3배 정예 기체 여부
 this.animOffset = Math.random() * 10;
 }
 update(dt, elapsed, speedScale=1.0, widthScale=1.0) {
@@ -1881,15 +1882,19 @@ if (elapsed - lastSpawnTime > spawnInterval) {
       }
 
 // 기본 적 1기 생성
-      enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb));
+      enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb, false));
 
-      // 60초 이후에만 체력 3배 정예 적 비행기(1~3기) 추가 스폰
+      // 60초 이후: 화면에 정예 기체가 모두 없을 때만(0개) 새로운 1~3기 무리 스폰
       if (elapsed >= 60.0) {
-        const heavyCount = Math.floor(1 + Math.random() * 3);
-        for (let h = 0; h < heavyCount; h++) {
-          enemies.push(new Enemy(calculatedHp * 3, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb));
+        const currentHeavyCount = enemies.filter(e => e.isHeavy).length;
+        if (currentHeavyCount === 0) {
+          const spawnCount = Math.floor(1 + Math.random() * 3); // 1~3기 랜덤 결정
+          for (let h = 0; h < spawnCount; h++) {
+            enemies.push(new Enemy(calculatedHp * 3, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb, true));
+          }
         }
       }
+    }
     }
 if (!currentBoss && elapsed >= nextBossTargetTime) {
   currentBoss = new BossEnemy();
