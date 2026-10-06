@@ -10,18 +10,21 @@
   #canvas-container { position: relative; width: 100%; max-width: 450px; height: 100%; max-height: 800px; display: flex; justify-content: center; align-items: center; }
   canvas { width: 100%; height: 100%; object-fit: contain; background: #080814; touch-action: none; }
   #name-input-overlay { display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; }
-  #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: monospace; font-size: 14px; text-align: center; outline: none; }
+  #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; font-size: 14px; text-align: center; outline: none; }
 </style>
 </head>
 <body>
 <div id="canvas-container">
   <canvas id="gameCanvas"></canvas>
   <div id="name-input-overlay">
-    <input type="text" id="name-input" maxlength="12" placeholder="ENTER NAME (REQUIRED)" autocomplete="off">
+    <input type="text" id="name-input" maxlength="12" placeholder="이름 입력 (필수)" autocomplete="off">
   </div>
 </div>
 
 <script>
+// =================================================================
+// 1. 시스템 설정 및 디스플레이 초기화
+// =================================================================
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const nameInputOverlay = document.getElementById("name-input-overlay");
@@ -29,15 +32,16 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web18";
+const VERSION_STR = "v20261006.Web19";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
-const BASE_SCALE = 4.0;
-const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
-const renderScale = BASE_SCALE * dpr;
+// 폰트 깨짐 방지용 공통 글꼴 스택
+const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif";
 
-canvas.width = Math.floor(LOGICAL_WIDTH * renderScale);
-canvas.height = Math.floor(LOGICAL_HEIGHT * renderScale);
+// 고해상도 레티나 스케일링 설정
+const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+canvas.width = Math.floor(LOGICAL_WIDTH * dpr);
+canvas.height = Math.floor(LOGICAL_HEIGHT * dpr);
 canvas.style.width = LOGICAL_WIDTH + "px";
 canvas.style.height = LOGICAL_HEIGHT + "px";
 
@@ -46,14 +50,19 @@ try {
   ctx.imageSmoothingQuality = "high";
 } catch(e){}
 
-// 7) XSS 방지 함수
+// =================================================================
+// 2. 보안, 무결성 검증 및 국가 식별 모듈
+// =================================================================
+let userCountry = "Global";
+let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
+let sessionStartTime = 0;
+
 function sanitizeText(str) {
   if (!str) return "Unknown";
-  return String(str).replace(/[^\w\s\uAC00-\uD7A3\u3040-\u30FF\u4E00-\u9FFF.-]/gi, '').trim().substring(0, 10);
+  // 한글 완성형, 영문, 숫자, 마침표, 하이픈만 허용하여 XSS 및 글자 깨짐 차단
+  return String(str).replace(/[^\w\s\uAC00-\uD7A3.-]/gi, '').trim().substring(0, 10) || "Unknown";
 }
 
-// 1) 국가 이름 식별 보강 (IP 조회 실패 시 로케일/타임존 Fallback)
-let userCountry = "Global";
 (function detectCountry() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
   const lang = navigator.language || "";
@@ -65,48 +74,55 @@ let userCountry = "Global";
 
   fetch("https://ipapi.co/json/")
     .then(r => r.json())
-    .then(d => {
-      if (d && d.country_name) userCountry = d.country_name;
-    })
+    .then(d => { if (d && d.country_name) userCountry = d.country_name; })
     .catch(() => {});
 })();
 
-function drawRoundRect(c, x, y, w, h, r) {
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.lineTo(x + w - r, y);
-  c.quadraticCurveTo(x + w, y, x + w, y + r);
-  c.lineTo(x + w, y + h - r);
-  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  c.lineTo(x + r, y + h);
-  c.quadraticCurveTo(x, y + h, x, y + h - r);
-  c.lineTo(x, y + r);
-  c.quadraticCurveTo(x, y, x + r, y);
-  c.closePath();
+async function fetchTop10() {
+  try {
+    const res = await fetch(FIREBASE_URL);
+    const data = await res.json();
+    if (data) {
+      const items = Object.values(data).filter(v => v && v.name && v.score !== undefined);
+      items.sort((a, b) => b.score - a.score);
+      top10List = items.slice(0, 10).map(v => ({ 
+        name: sanitizeText(v.name), 
+        score: Math.floor(Number(v.score) || 0),
+        country: sanitizeText(v.country) || "Global"
+      }));
+    }
+  } catch(e){}
+}
+fetchTop10();
+
+async function uploadScore(name, finalScore) {
+  const cleanName = sanitizeText(name);
+  if (!cleanName || cleanName === "Unknown") return;
+
+  // 플레이 시간 대비 이론상 불가능한 비정상 점수 검증 (치트 방지)
+  const durationSec = Math.max(1, (performance.now() - sessionStartTime) / 1000);
+  const maxPossibleScore = durationSec * 60 + 500;
+  if (finalScore < 0 || finalScore > maxPossibleScore || finalScore > 100000) return;
+
+  try {
+    await fetch(FIREBASE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        name: cleanName, 
+        score: Math.floor(finalScore), 
+        country: sanitizeText(userCountry), 
+        token: sessionSecurityKey,
+        time: Date.now() / 1000 
+      })
+    });
+    fetchTop10();
+  } catch(e){}
 }
 
-function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
-  let rot = Math.PI / 2 * 3;
-  let x = cx, y = cy;
-  let step = Math.PI / spikes;
-
-  c.beginPath();
-  c.moveTo(cx, cy - outerRadius);
-  for (let i = 0; i < spikes; i++) {
-    x = cx + Math.cos(rot) * outerRadius;
-    y = cy + Math.sin(rot) * outerRadius;
-    c.lineTo(x, y);
-    rot += step;
-    x = cx + Math.cos(rot) * innerRadius;
-    y = cy + Math.sin(rot) * innerRadius;
-    c.lineTo(x, y);
-    rot += step;
-  }
-  c.lineTo(cx, cy - outerRadius);
-  c.closePath();
-}
-
-// --- [사운드 엔진] ---
+// =================================================================
+// 3. Web Audio 사운드 합성 및 BGM 엔진
+// =================================================================
 let audioCtx = null;
 let bgmInterval = null;
 let bgmStep = 0;
@@ -215,25 +231,43 @@ function startBGMEngine() {
   }, 125);
 }
 
-const CONFIG = {
-  BASE_PLAYER_SPEED: 6.24,
-  STAT_SPEED_FACTOR: 0.65,
-  BASE_FIRE_INTERVAL: 0.324,
-  FIRE_RATE_REDUCTION: 0.05,
-  HIT_PROBABILITY: 0.50,
-  TARGET_HP_PRESSURE_RATIO: 0.85,
-  MIN_SPAWN_INTERVAL: 0.05,
-  MAX_SPAWN_INTERVAL: 0.30,
-  MAX_ENEMY_HP_CAP: 30,
-  BASE_ENEMY_SPEED: 3.6,
-  LASER_WEAPON_INTERVAL: 1.0,
-  LASER_BEAM_LINGER_TIME: 0.1,
-  CLONE_SHIP_DURATION: 30.0,
-  MAX_SKILL_GAUGE: 100.0,
-  BASE_GAUGE_PER_KILL: 2.6,
-  MIN_GAUGE_PER_KILL: 0.65,
-  GAUGE_BOOST_DURATION: 20.0
-};
+// =================================================================
+// 4. 그래픽 드로잉 및 도트 렌더러
+// =================================================================
+function drawRoundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
+  let rot = Math.PI / 2 * 3;
+  let x = cx, y = cy;
+  let step = Math.PI / spikes;
+
+  c.beginPath();
+  c.moveTo(cx, cy - outerRadius);
+  for (let i = 0; i < spikes; i++) {
+    x = cx + Math.cos(rot) * outerRadius;
+    y = cy + Math.sin(rot) * outerRadius;
+    c.lineTo(x, y);
+    rot += step;
+    x = cx + Math.cos(rot) * innerRadius;
+    y = cy + Math.sin(rot) * innerRadius;
+    c.lineTo(x, y);
+    rot += step;
+  }
+  c.lineTo(cx, cy - outerRadius);
+  c.closePath();
+}
 
 const PIXEL_PLAYERS = {
   0: [[0,0,0,0,0,1,1,0,0,0,0,0],[0,0,0,0,1,2,2,1,0,0,0,0],[0,0,0,1,1,2,2,1,1,0,0,0],[0,0,1,1,3,2,2,3,1,1,0,0],[0,1,1,1,3,2,2,3,1,1,1,0],[1,1,0,1,1,3,3,1,1,0,1,1],[1,0,0,1,1,1,1,1,1,0,0,1],[1,0,1,1,1,4,4,1,1,1,0,1],[0,0,1,0,4,0,0,4,0,1,0,0]],
@@ -278,6 +312,9 @@ function drawMatrix(matrix, cx, cy, colorMap, psize=3) {
   }
 }
 
+// =================================================================
+// 5. 게임 엔티티 클래스 정의
+// =================================================================
 class Star {
   constructor() {
     this.x = Math.random() * LOGICAL_WIDTH;
@@ -345,12 +382,11 @@ class Comet {
   }
 }
 
-// 14) 파워형: 적 기체 2배 크기의 거대 단일 블랙홀 1개
 class BlackHole {
   constructor(x, y, baseRadius) {
     this.x = x;
     this.y = y;
-    this.baseRadius = baseRadius * 2.0; // 2배 크기 1개
+    this.baseRadius = baseRadius * 2.0;
     this.life = 2.0;
     this.angle = 0;
   }
@@ -482,13 +518,12 @@ class ExplosionFX {
   }
 }
 
-// 8) 번개 지속시간 2배(1.8초), 광역 네온 비주얼 강화
 class LightningBolt {
   constructor(x, y, radius) {
     this.x = x;
     this.y = y;
     this.radius = radius;
-    this.life = 1.8; // 2배 확장 (0.9s -> 1.8s)
+    this.life = 1.8;
     this.totalLife = 1.8;
   }
   update(dt, enemiesList) {
@@ -571,7 +606,7 @@ class BossDropItem {
     ctx.stroke();
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 15px Arial";
+    ctx.font = `bold 15px ${FONT_FAMILY}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(type, this.x, this.y);
@@ -704,7 +739,7 @@ class BossEnemy {
     ctx.fillStyle = "#ff2d2d";
     ctx.fillRect(this.x - barW / 2, this.y - this.radius - 16, hpW, 6);
     ctx.fillStyle = "#ff2d2d";
-    ctx.font = "bold 11px monospace";
+    ctx.font = `bold 11px ${FONT_FAMILY}`;
     ctx.textAlign = "center";
     ctx.fillText(`BOSS HP: ${this.hp}/20`, this.x, this.y - this.radius - 20);
   }
@@ -723,13 +758,9 @@ class Player {
     this.radius = 22; this.shieldRemain = 0.0; this.lastShot = 0.0;
     this.isAlive = true;
 
-    // 11) 스피드형 전방 보호막 (6초 주기, 2초 유지)
     this.speedFrontShieldCycleTimer = 0.0;
     this.frontShieldRemain = 0.0;
-
-    // 13) 스피드형 8렙 특수 부채꼴 발사 주기 타이머 (15초 주기)
     this.speedFanBurstTimer = 0.0;
-
     this.lightningTimer = 0.0;
   }
   getDominantTrait() {
@@ -763,7 +794,6 @@ class Player {
     if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
     if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
 
-    // 11) 스피드형 전방 보호막 (6초 주기 2초 유지)
     if (this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) {
       this.speedFrontShieldCycleTimer += dt;
       if (this.speedFrontShieldCycleTimer >= 6.0) {
@@ -774,7 +804,6 @@ class Player {
     }
     if (this.frontShieldRemain > 0) this.frontShieldRemain = Math.max(0, this.frontShieldRemain - dt);
 
-    // 13) 스피드형 Lv.8 이상: 15초마다 부채꼴(40도) 10발씩 5회 연속 발사
     if ((this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) && this.speedStat >= 8) {
       this.speedFanBurstTimer += dt;
       if (this.speedFanBurstTimer >= 15.0) {
@@ -793,7 +822,6 @@ class Player {
       }
     }
 
-    // 8) 공속형 Lv.8 이상 번개 발동
     if ((this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE")) && this.fireRateStat >= 8) {
       this.lightningTimer += dt;
       if (this.lightningTimer >= 3.0) {
@@ -826,7 +854,6 @@ class Player {
   _fire(px, py, dmg, bullets) {
     const trait = this.getDominantTrait();
 
-    // 8) 공속형 360도 탄환: 20도당 1개(총 18개) 배치
     if (trait === "RATE" && this.shotCount % 5 === 0) {
       for (let i = 0; i < 18; i++) {
         const rad = (i * 20) * (Math.PI / 180);
@@ -895,7 +922,6 @@ class Player {
   draw(curTime) {
     if (!this.isAlive) return;
 
-    // 4) 옵션 종료 5초 전 0.3초 주기 점멸 (어두워졌다 밝아졌다 반복)
     const isDoubleExpiring = this.clonePlaneTimer > 0 && this.clonePlaneTimer <= 5.0;
     const isDoubleDim = isDoubleExpiring && (Math.floor(curTime / 0.3) % 2 === 0);
 
@@ -936,7 +962,6 @@ class Player {
     drawShipAt(this.x, this.y, false);
     if (this.clonePlaneTimer > 0) drawShipAt(this.x + 42, this.y, true);
 
-    // 11) 스피드형 전방 보호막 렌더링 (0.5초 이하 시 0.2초 깜빡임, 전방만 보호)
     if (this.frontShieldRemain > 0) {
       let showFront = true;
       if (this.frontShieldRemain <= 0.5) {
@@ -949,7 +974,6 @@ class Player {
         ctx.shadowColor = "#00f5ff";
         ctx.shadowBlur = 14;
         ctx.beginPath();
-        // 전방 120도 아크 (정면 방향)
         ctx.arc(this.x, this.y, this.radius + 20, -Math.PI * 0.83, -Math.PI * 0.17);
         ctx.stroke();
 
@@ -962,7 +986,6 @@ class Player {
       }
     }
 
-    // 전신 보호막
     if (this.shieldRemain > 0) {
       ctx.save();
       if (isShieldDim) ctx.globalAlpha = 0.3;
@@ -981,7 +1004,6 @@ class Player {
       ctx.restore();
     }
 
-    // 3, 12) 기체 하단 스킬 표시: 이름 아래에 시간 2단 배치
     const activeSkills = [];
     if (this.laserWeaponTimer > 0) activeSkills.push({ name: "LASER", sec: `${Math.round(this.laserWeaponTimer)}s` });
     if (this.clonePlaneTimer > 0) activeSkills.push({ name: "DOUBLE", sec: `${Math.round(this.clonePlaneTimer)}s` });
@@ -999,10 +1021,10 @@ class Player {
 
       activeSkills.forEach((sk, idx) => {
         const sx = startX + idx * colWidth;
-        ctx.font = "bold 10px monospace";
+        ctx.font = `bold 10px ${FONT_FAMILY}`;
         ctx.fillStyle = "#00f5ff";
         ctx.fillText(sk.name, sx, row1Y);
-        ctx.font = "bold 11px monospace";
+        ctx.font = `bold 11px ${FONT_FAMILY}`;
         ctx.fillStyle = "#ffe600";
         ctx.fillText(sk.sec, sx, row2Y);
       });
@@ -1011,7 +1033,9 @@ class Player {
   }
 }
 
-// --- [전역 상태] ---
+// =================================================================
+// 6. 전역 인스턴스 및 룰렛 파라미터
+// =================================================================
 let stars = Array.from({ length: 65 }, () => new Star());
 let comets = Array.from({ length: 3 }, () => new Comet());
 let lastCometSpawnCheck = 0;
@@ -1027,7 +1051,7 @@ let currentBoss = null;
 let explosions = [];
 let activeLasers = [];
 
-let gameState = 0;
+let gameState = 0; // 0:선택, 1:전투, 2:슬롯, 3:게임오버, 4:레전드연출, 5:시간룰렛
 let legendShowcaseStartTime = 0;
 
 let score = 0;
@@ -1036,7 +1060,6 @@ let inGameElapsedTime = 0;
 let lastSpawnTime = 0;
 let nextBossTargetTime = 90.0;
 let gaugeBoostTimer = 0.0;
-let lastDpsCheckTime = 0.0;
 let top10List = [];
 
 let minigameTargetOption = null;
@@ -1048,10 +1071,9 @@ const PERIMETER_W = 380;
 const PERIMETER_H = 95;
 const TOTAL_PERIMETER = (PERIMETER_W + PERIMETER_H) * 2;
 
-// 9) 외곽 별 크기 4배 확대 (12~24px)
 const ORBIT_STARS = Array.from({ length: 12 }, (_, i) => ({
   dist: Math.random() * TOTAL_PERIMETER,
-  size: (3 + Math.random() * 4) * 4.0, // 4배 크기 적용
+  size: (3 + Math.random() * 4) * 4.0,
   speed: (Math.random() < 0.5 ? 1 : -1) * (30 + Math.random() * 50)
 }));
 
@@ -1106,58 +1128,7 @@ let lastRandomSwitch = 0;
 let lastRollTime = 0;
 let rollP = 4, rollS = 2, rollR = 1;
 let isTouchActive = false;
-
 const keysPressed = {};
-
-function generateBalancedStats() {
-  const combinations = [
-    [4, 2, 1],
-    [5, 1, 1]
-  ];
-  const chosen = combinations[Math.floor(Math.random() * combinations.length)];
-  const shuffled = chosen.sort(() => Math.random() - 0.5);
-  return { p: shuffled[0], s: shuffled[1], r: shuffled[2] };
-}
-
-async function fetchTop10() {
-  try {
-    const res = await fetch(FIREBASE_URL);
-    const data = await res.json();
-    if (data) {
-      const items = Object.values(data).filter(v => v && v.name && v.score !== undefined);
-      items.sort((a, b) => b.score - a.score);
-      top10List = items.slice(0, 10).map(v => ({ 
-        name: sanitizeText(v.name), 
-        score: Math.floor(Number(v.score) || 0),
-        country: sanitizeText(v.country) || "Global"
-      }));
-    }
-  } catch(e){}
-}
-fetchTop10();
-
-async function uploadScore(name, finalScore) {
-  // 7, 10) 보안 및 유효성 검증: 이름 미입력 시 등록 차단
-  const cleanName = sanitizeText(name);
-  if (!cleanName || cleanName === "Unknown") return;
-
-  // 비정상 비현실 스코어 변조 방지
-  if (finalScore < 0 || finalScore > 1000000) return;
-
-  try {
-    await fetch(FIREBASE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        name: cleanName, 
-        score: Math.floor(finalScore), 
-        country: sanitizeText(userCountry), 
-        time: Date.now() / 1000 
-      })
-    });
-    fetchTop10();
-  } catch(e){}
-}
 
 function startBattle(type) {
   initAudio();
@@ -1165,6 +1136,8 @@ function startBattle(type) {
 
   inGameBgmTrack = Math.floor(Math.random() * 3);
   currentBgmMode = "ingame";
+  sessionStartTime = performance.now();
+  sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 
   if (type === 3) {
     if (Math.random() < 0.08) {
@@ -1190,7 +1163,6 @@ function initBattleState() {
   score = 0; skillGauge = 0.0; gaugeBoostTimer = 0.0;
   inGameElapsedTime = 0;
   lastSpawnTime = 0;
-  lastDpsCheckTime = 0;
   nextBossTargetTime = 90.0;
   isTouchActive = false;
   randomPickShowcaseActive = false;
@@ -1221,11 +1193,9 @@ function applyChosenSkill(code, customDuration=null) {
   }
 }
 
-function isEligibleForTop10(currScore) {
-  if (top10List.length < 10) return true;
-  return currScore > top10List[top10List.length - 1].score;
-}
-
+// =================================================================
+// 7. 통합 사용자 입력 처리 (터치 / 마우스 / 키보드)
+// =================================================================
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 };
@@ -1248,22 +1218,25 @@ function handlePointerDown(clientX, clientY) {
   isTouchActive = true;
   const coords = getCanvasCoords(clientX, clientY);
 
+  // 1) 비행기 선택 화면 카드 클릭 영역 정확 보정
   if (gameState === 0) {
-    if (coords.y >= 165 && coords.y <= 240) startBattle(0);
-    else if (coords.y >= 250 && coords.y <= 325) startBattle(1);
-    else if (coords.y >= 335 && coords.y <= 410) startBattle(2);
-    else if (coords.y >= 420 && coords.y <= 495) startBattle(3);
+    if (coords.x >= 35 && coords.x <= 415) {
+      if (coords.y >= 165 && coords.y <= 240) startBattle(0);
+      else if (coords.y >= 250 && coords.y <= 325) startBattle(1);
+      else if (coords.y >= 335 && coords.y <= 410) startBattle(2);
+      else if (coords.y >= 420 && coords.y <= 495) startBattle(3);
+    }
   } else if (gameState === 1 && player) {
     player.targetX = coords.x;
     player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - 120));
   } else if (gameState === 2 && !randomPickShowcaseActive) {
     const cards = [
-      { code: "POWER_UP", x: 35, y: 110, w: 175, h: 90 },
-      { code: "SPEED_UP", x: 240, y: 110, w: 175, h: 90 },
-      { code: "FIRE_RATE", x: 35, y: 220, w: 175, h: 90 },
-      { code: "CLONE_SHIP", x: 240, y: 220, w: 175, h: 90 },
-      { code: "LASER_WEAPON", x: 35, y: 330, w: 175, h: 90 },
-      { code: "SHIELD", x: 240, y: 330, w: 175, h: 90 }
+      { code: "POWER_UP", x: 35, y: 95, w: 175, h: 80 },
+      { code: "SPEED_UP", x: 240, y: 95, w: 175, h: 80 },
+      { code: "FIRE_RATE", x: 35, y: 195, w: 175, h: 80 },
+      { code: "CLONE_SHIP", x: 240, y: 195, w: 175, h: 80 },
+      { code: "LASER_WEAPON", x: 35, y: 295, w: 175, h: 80 },
+      { code: "SHIELD", x: 240, y: 295, w: 175, h: 80 }
     ];
 
     let clickedSkill = false;
@@ -1303,7 +1276,6 @@ function handlePointerDown(clientX, clientY) {
   } else if (gameState === 3) {
     const btnRect = { x: LOGICAL_WIDTH / 2 - 90, y: LOGICAL_HEIGHT * 0.3 + 125, w: 180, h: 42 };
     if (coords.x >= btnRect.x && coords.x <= btnRect.x + btnRect.w && coords.y >= btnRect.y && coords.y <= btnRect.y + btnRect.h) {
-      // 10) 이름을 입력하지 않고 확인/종료 시 점수 미반영
       const enteredName = nameInput.value.trim();
       if (enteredName.length > 0) {
         uploadScore(enteredName, score);
@@ -1357,7 +1329,9 @@ canvas.addEventListener("touchcancel", e => {
   handlePointerUp();
 }, { passive: false });
 
-// --- [메인 루프] ---
+// =================================================================
+// 8. 메인 프레임 루프
+// =================================================================
 let lastTime = performance.now();
 
 function safeGameLoop(now) {
@@ -1366,7 +1340,7 @@ function safeGameLoop(now) {
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     stars.forEach(s => s.update());
     
@@ -1389,7 +1363,7 @@ function safeGameLoop(now) {
     blackHoles.forEach(b => b.update(dt, enemies));
     blackHoles = blackHoles.filter(b => b.life > 0);
 
-    // 1. SELECT STATE
+    // 1. 기체 선택 화면
     if (gameState === 0) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -1397,12 +1371,12 @@ function safeGameLoop(now) {
       comets.forEach(c => c.draw());
 
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "bold 29px Arial";
+      ctx.font = `bold 28px ${FONT_FAMILY}`;
       ctx.textAlign = "center";
       ctx.fillText("NEON FLIGHT: OVERDRIVE", LOGICAL_WIDTH / 2, 60);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "13px Arial";
+      ctx.font = `13px ${FONT_FAMILY}`;
       ctx.fillText("CHOOSE YOUR FIGHTER", LOGICAL_WIDTH / 2, 95);
 
       if (curTime - lastRandomSwitch >= 0.5) {
@@ -1436,12 +1410,12 @@ function safeGameLoop(now) {
 
         ctx.textAlign = "left";
         ctx.fillStyle = "#fff";
-        ctx.font = "bold 15px Arial";
-        ctx.fillText(c.name, 115, c.y + 19);
+        ctx.font = `bold 16px ${FONT_FAMILY}`;
+        ctx.fillText(c.name, 115, c.y + 20);
 
-        ctx.font = "bold 9px Arial";
+        ctx.font = `bold 9px ${FONT_FAMILY}`;
         ctx.fillStyle = "#00f5ff";
-        ctx.fillText(c.sub, 115, c.y + 34);
+        ctx.fillText(c.sub, 115, c.y + 35);
 
         const maxVal = Math.max(c.p, c.s, c.r);
         const isMaxP = (c.p === maxVal);
@@ -1450,13 +1424,13 @@ function safeGameLoop(now) {
 
         let xOffset = 115;
         const renderStat = (label, val, isHigh) => {
-          ctx.font = isHigh ? "bold 13px Arial" : "11px Arial";
+          ctx.font = isHigh ? `bold 13px ${FONT_FAMILY}` : `11px ${FONT_FAMILY}`;
           ctx.fillStyle = isHigh ? "#ffe600" : "#a0b0c8";
           const txtStr = `${label} ${val}`;
           ctx.fillText(txtStr, xOffset, c.y + 58);
           xOffset += ctx.measureText(txtStr).width + 8;
 
-          ctx.font = "11px Arial";
+          ctx.font = `11px ${FONT_FAMILY}`;
           ctx.fillStyle = "#647082";
           ctx.fillText("|", xOffset, c.y + 58);
           xOffset += 10;
@@ -1464,12 +1438,12 @@ function safeGameLoop(now) {
 
         renderStat("PWR", c.p, isMaxP);
         renderStat("SPD", c.s, isMaxS);
-        ctx.font = isMaxR ? "bold 13px Arial" : "11px Arial";
+        ctx.font = isMaxR ? `bold 13px ${FONT_FAMILY}` : `11px ${FONT_FAMILY}`;
         ctx.fillStyle = isMaxR ? "#ffe600" : "#a0b0c8";
         ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
       });
 
-      // 3, 6) Top 5 점수판 선명화 (좌표 Math.round 및 고대비 폰트 적용)
+      // 3) 글로벌 TOP 5 깨짐 방지 폰트 렌더링
       const t5Y = 515;
       ctx.fillStyle = "rgba(10, 15, 30, 0.9)";
       drawRoundRect(ctx, 35, t5Y, LOGICAL_WIDTH - 70, 120, 8);
@@ -1479,12 +1453,12 @@ function safeGameLoop(now) {
       ctx.stroke();
 
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "bold 12px monospace";
+      ctx.font = `bold 12px ${FONT_FAMILY}`;
       ctx.textAlign = "center";
       ctx.fillText("★ GLOBAL TOP 5 PLAYERS ★", LOGICAL_WIDTH / 2, t5Y + 20);
 
       const top5 = top10List.slice(0, 5);
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold 11px ${FONT_FAMILY}`;
       if (top5.length === 0) {
         ctx.fillStyle = "#a0b0c8";
         ctx.fillText("WAITING FOR RECORDS...", LOGICAL_WIDTH / 2, t5Y + 68);
@@ -1499,13 +1473,12 @@ function safeGameLoop(now) {
         });
       }
 
-      // 5) 버전 폰트 밝기 2단계 상승 (#5a6478 -> #b0bac9)
       ctx.textAlign = "left";
       ctx.fillStyle = "#b0bac9";
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold 11px ${FONT_FAMILY}`;
       ctx.fillText(VERSION_STR, 10, LOGICAL_HEIGHT - 12);
 
-    // 1-1. LEGEND SHOWCASE STATE
+    // 1-1. 레전드 연출
     } else if (gameState === 4) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -1527,20 +1500,20 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#ffd700";
-      ctx.font = "bold 20px Arial";
+      ctx.font = `bold 20px ${FONT_FAMILY}`;
       ctx.fillText("CONGRATULATIONS!", cx, cy + 100);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 16px Arial";
+      ctx.font = `bold 16px ${FONT_FAMILY}`;
       ctx.fillText("LEGEND SHIP UNLOCKED!", cx, cy + 130);
 
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "14px monospace";
+      ctx.font = `14px ${FONT_FAMILY}`;
       ctx.fillText(`GAME STARTS IN ${remainSec}s`, cx, cy + 170);
 
       if (elapsedShowcase >= 3.0) initBattleState();
 
-    // 2. BATTLE STATE
+    // 2. 인게임 전투
     } else if (gameState === 1) {
       inGameElapsedTime += dt;
       const elapsed = inGameElapsedTime;
@@ -1678,12 +1651,10 @@ function safeGameLoop(now) {
       bossMissiles.forEach(m => m.update(dt));
       bossMissiles = bossMissiles.filter(m => m.y < LOGICAL_HEIGHT + 30);
 
-      // 보스 미사일 충돌 판정
       for (let i = bossMissiles.length - 1; i >= 0; i--) {
         const m = bossMissiles[i];
         if (player.isAlive && Math.hypot(player.x - m.x, player.y - m.y) < player.radius + m.radius) {
           bossMissiles.splice(i, 1);
-          // 전방 쉴드(앞에서 내려오는 미사일) 혹은 전신 쉴드 시 방어
           const isBlockedByFront = player.frontShieldRemain > 0 && m.y <= player.y;
           if (player.shieldRemain <= 0 && !isBlockedByFront) {
             player.isAlive = false;
@@ -1695,7 +1666,6 @@ function safeGameLoop(now) {
         }
       }
 
-      // 적 기체 충돌 판정
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
         e.update(dt, elapsed, speedScale, widthScale);
@@ -1704,7 +1674,6 @@ function safeGameLoop(now) {
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
           const b = bullets[bi];
           if (Math.hypot(b.x - e.x, b.y - e.y) < b.radius + e.radius) {
-            // 14) 파워형 특수탄: 적 비행기 2배 크기의 거대 단일 블랙홀 1개 생성
             if (b.isBlackHoleTrigger) {
               blackHoles.push(new BlackHole(e.x, e.y, e.radius));
             }
@@ -1729,7 +1698,6 @@ function safeGameLoop(now) {
           }
         }
 
-        // 11) 플레이어 충돌: 전방 쉴드는 전방(각도 -150도 ~ -30도, y < player.y)만 방어. 좌우뒤 피격 시 사망
         if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
           const hitAngle = Math.atan2(e.y - player.y, e.x - player.x);
           const isFrontHit = player.frontShieldRemain > 0 && (hitAngle >= -Math.PI * 0.85 && hitAngle <= -Math.PI * 0.15);
@@ -1779,13 +1747,13 @@ function safeGameLoop(now) {
       stars.forEach(s => s.draw());
       comets.forEach(c => c.draw());
 
-      // 3, 6) 인게임 Top 10 선명화
+      // 3) 인게임 TOP 10 고화질 렌더링
       ctx.fillStyle = "rgba(10, 15, 30, 0.75)";
       ctx.fillRect(10, 10, 160, 150);
       ctx.strokeStyle = "#00f5ff";
       ctx.strokeRect(10, 10, 160, 150);
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "bold 10px monospace";
+      ctx.font = `bold 10px ${FONT_FAMILY}`;
       ctx.textAlign = "left";
       ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
       top10List.forEach((item, idx) => {
@@ -1815,20 +1783,18 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "right";
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 15px Arial";
+      ctx.font = `bold 15px ${FONT_FAMILY}`;
       ctx.fillText(`SCORE: ${score}`, LOGICAL_WIDTH - 20, 25);
       ctx.fillStyle = "#ffe600";
-      ctx.font = "13px Arial";
+      ctx.font = `13px ${FONT_FAMILY}`;
       ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, LOGICAL_WIDTH - 20, 45);
 
-      // 5) 버전 폰트 밝기 2단계 상승 (#5a6478 -> #b0bac9)
       const baseBottomY = LOGICAL_HEIGHT - 12;
       ctx.textAlign = "left";
       ctx.fillStyle = "#b0bac9";
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold 11px ${FONT_FAMILY}`;
       ctx.fillText(VERSION_STR, 10, baseBottomY);
 
-      // 2) 좌측 하단 스킬 표시: SHIELD 외에 DOUBLE, LASER 추가 및 5초 미만 시 점멸
       const renderBlinkingSkill = (label, remain, yOffset, baseCol) => {
         if (remain <= 0) return;
         let isBlink = false;
@@ -1839,7 +1805,7 @@ function safeGameLoop(now) {
         ctx.fillText(`${label}: ${remain.toFixed(1)}s`, 10, baseBottomY - yOffset);
       };
 
-      ctx.font = "12px Arial";
+      ctx.font = `12px ${FONT_FAMILY}`;
       ctx.fillStyle = "#ff0080"; ctx.fillText(`POWER : Lv.${Math.round(player.powerStat)}`, 10, baseBottomY - 86);
       ctx.fillStyle = "#00f5ff"; ctx.fillText(`SPEED : Lv.${Math.round(player.speedStat)}`, 10, baseBottomY - 70);
       ctx.fillStyle = "#ffe600"; ctx.fillText(`RATE  : Lv.${Math.round(player.fireRateStat)}`, 10, baseBottomY - 54);
@@ -1861,10 +1827,10 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "left";
       ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
-      ctx.font = "12px Arial";
+      ctx.font = `12px ${FONT_FAMILY}`;
       ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
 
-    // 3. SLOT STATE
+    // 3. 슬롯머신 수동 선택 화면
     } else if (gameState === 2) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -1874,11 +1840,11 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "bold 22px Arial";
+      ctx.font = `bold 22px ${FONT_FAMILY}`;
       ctx.fillText("CHOOSE YOUR UPGRADE", LOGICAL_WIDTH / 2, 45);
 
       ctx.fillStyle = "#ffe600";
-      ctx.font = "13px Arial";
+      ctx.font = `13px ${FONT_FAMILY}`;
       ctx.fillText("SELECT AN OPTION OR CHANCE MULTIPLIER", LOGICAL_WIDTH / 2, 68);
 
       const cards = [
@@ -1892,7 +1858,7 @@ function safeGameLoop(now) {
 
       cards.forEach(c => {
         ctx.fillStyle = "rgba(20, 25, 45, 0.85)";
-        drawRoundRect(ctx, c.x, c.y, c.w, c.h, 10);
+        drawRoundRect(ctx, 35, c.y, c.w, c.h, 10);
         ctx.fill();
         ctx.strokeStyle = c.col;
         ctx.lineWidth = 2;
@@ -1900,15 +1866,14 @@ function safeGameLoop(now) {
 
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 14px Arial";
+        ctx.font = `bold 14px ${FONT_FAMILY}`;
         ctx.fillText(c.title, c.x + c.w / 2, c.y + 35);
 
         ctx.fillStyle = c.col;
-        ctx.font = "12px Arial";
+        ctx.font = `12px ${FONT_FAMILY}`;
         ctx.fillText(c.desc, c.x + c.w / 2, c.y + 60);
       });
 
-      // 1) 롤링 속도 50% 추가 가속 (0.08s -> 0.04s)
       if (curTime - lastMultRollTime >= 0.04) {
         lastMultRollTime = curTime;
         currentMultIndex = (currentMultIndex + 1) % shuffledMultiplierPool.length;
@@ -1923,7 +1888,6 @@ function safeGameLoop(now) {
       ctx.lineWidth = 3;
       ctx.stroke();
 
-      // 2, 9) 외곽 라인을 따라 속도별로 회전하는 4배 커진 반짝이 별 12개
       ORBIT_STARS.forEach((st, idx) => {
         st.dist += st.speed * dt;
         const pt = getPerimeterPoint(btnMult.x, btnMult.y, st.dist);
@@ -1940,15 +1904,15 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#ffd700";
-      ctx.font = "bold 12px Arial";
+      ctx.font = `bold 12px ${FONT_FAMILY}`;
       ctx.fillText("CHANCE: x1, x2, x3 MULTIPLIER", btnMult.x + btnMult.w / 2, btnMult.y + 24);
 
       ctx.fillStyle = currentMultOption.col;
-      ctx.font = "bold 26px Arial";
+      ctx.font = `bold 26px ${FONT_FAMILY}`;
       ctx.fillText(currentMultOption.label, btnMult.x + btnMult.w / 2, btnMult.y + 58);
 
       ctx.fillStyle = "#a0b0c8";
-      ctx.font = "11px Arial";
+      ctx.font = `11px ${FONT_FAMILY}`;
       ctx.fillText("TAP OR CLICK TO GRAB THIS BONUS!", btnMult.x + btnMult.w / 2, btnMult.y + 82);
 
       if (randomPickShowcaseActive) {
@@ -1969,15 +1933,15 @@ function safeGameLoop(now) {
 
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffd700";
-        ctx.font = "bold 18px Arial";
+        ctx.font = `bold 18px ${FONT_FAMILY}`;
         ctx.fillText("★ BONUS MULTIPLIER WON! ★", LOGICAL_WIDTH / 2, popY + 45);
 
         ctx.fillStyle = randomPickResult.col;
-        ctx.font = "bold 32px Arial";
+        ctx.font = `bold 32px ${FONT_FAMILY}`;
         ctx.fillText(randomPickResult.label, LOGICAL_WIDTH / 2, popY + 105);
 
         ctx.fillStyle = "#00f5ff";
-        ctx.font = "bold 14px Arial";
+        ctx.font = `bold 14px ${FONT_FAMILY}`;
         ctx.fillText("STAT UPGRADED! RETURNING...", LOGICAL_WIDTH / 2, popY + 155);
 
         if (showcaseElapsed >= 2.0) {
@@ -1988,10 +1952,10 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "left";
       ctx.fillStyle = "#b0bac9";
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold 11px ${FONT_FAMILY}`;
       ctx.fillText(VERSION_STR, 10, LOGICAL_HEIGHT - 12);
 
-    // 3-1. TIMED MINIGAME STATE
+    // 3-1. 시간 룰렛 미니게임
     } else if (gameState === 5) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -2011,25 +1975,25 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#00f5ff";
-      ctx.font = "bold 18px Arial";
+      ctx.font = `bold 18px ${FONT_FAMILY}`;
       ctx.fillText(`${minigameTargetOption === "LASER_WEAPON" ? "LASER WEAPON" : "ENERGY SHIELD"}`, LOGICAL_WIDTH / 2, popY + 45);
 
       if (minigameSelectedTime === null) {
         minigameRollingTime = Math.floor(20 + Math.random() * 41);
         ctx.fillStyle = "#ffe600";
-        ctx.font = "bold 56px Arial";
+        ctx.font = `bold 56px ${FONT_FAMILY}`;
         ctx.fillText(`${minigameRollingTime}s`, LOGICAL_WIDTH / 2, popY + 125);
 
         ctx.fillStyle = "#ffffff";
-        ctx.font = "13px Arial";
+        ctx.font = `13px ${FONT_FAMILY}`;
         ctx.fillText("TAP OR CLICK SCREEN TO STOP!", LOGICAL_WIDTH / 2, popY + 185);
       } else {
         ctx.fillStyle = "#32ff78";
-        ctx.font = "bold 56px Arial";
+        ctx.font = `bold 56px ${FONT_FAMILY}`;
         ctx.fillText(`${minigameSelectedTime}s`, LOGICAL_WIDTH / 2, popY + 125);
 
         ctx.fillStyle = "#32ff78";
-        ctx.font = "bold 15px Arial";
+        ctx.font = `bold 15px ${FONT_FAMILY}`;
         ctx.fillText("DURATION CONFIRMED!", LOGICAL_WIDTH / 2, popY + 185);
 
         if (curTime - minigameFinishTimestamp >= 1.2) {
@@ -2038,7 +2002,7 @@ function safeGameLoop(now) {
         }
       }
 
-    // 4. GAMEOVER STATE
+    // 4. 게임오버 화면
     } else if (gameState === 3) {
       ctx.fillStyle = "#080814";
       ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -2055,22 +2019,22 @@ function safeGameLoop(now) {
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#ff0080";
-      ctx.font = "bold 24px Arial";
+      ctx.font = `bold 24px ${FONT_FAMILY}`;
       ctx.fillText("GAME OVER", LOGICAL_WIDTH / 2, popY + 15);
       ctx.fillStyle = "#ffe600";
-      ctx.font = "bold 16px Arial";
+      ctx.font = `bold 16px ${FONT_FAMILY}`;
       ctx.fillText(`FINAL SCORE: ${score}`, LOGICAL_WIDTH / 2, popY + 45);
 
       ctx.fillStyle = "#00f5ff";
       drawRoundRect(ctx, LOGICAL_WIDTH / 2 - 90, popY + 125, 180, 42, 8);
       ctx.fill();
       ctx.fillStyle = "#14192d";
-      ctx.font = "bold 15px Arial";
+      ctx.font = `bold 15px ${FONT_FAMILY}`;
       ctx.fillText("SUBMIT & RESTART", LOGICAL_WIDTH / 2, popY + 151);
 
       ctx.textAlign = "left";
       ctx.fillStyle = "#b0bac9";
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold 11px ${FONT_FAMILY}`;
       ctx.fillText(VERSION_STR, 10, LOGICAL_HEIGHT - 12);
     }
   } catch(err){}
