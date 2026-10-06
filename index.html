@@ -455,14 +455,7 @@ ctx.restore();
 
 class MeteorManager {
 constructor() {
-this.meteors = [];
-this.pendingQueue = [];
-this.nextSpawnTime = 0;
-this.cooldownUntil = 0;
-this.warningActive = false;
-this.warningStartTime = 0;
-this.earlyTwoSpawnTimes = [];
-this.earlyIndex = 0;
+this.reset();
 }
 reset() {
 this.meteors = [];
@@ -2067,10 +2060,12 @@ enemies.forEach(e => e.draw(curTime));
 blackHoles.forEach(b => b.draw());
 lightningBolts.forEach(l => l.draw());
 if (currentBoss) currentBoss.draw();
+if (meteorManager) {
 meteorManager.drawMeteors();
 meteorManager.drawWarning();
+}
 explosions.forEach(ex => ex.draw());
-player.draw(curTime);
+if (player) player.draw(curTime);
 
 ctx.textAlign = "right";
 ctx.fillStyle = "#ffffff";
