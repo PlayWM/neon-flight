@@ -86,23 +86,27 @@ let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 let sessionStartTime = performance.now();
 
 try {
-const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-const lang = navigator.language || "";
-if (tz.includes("Seoul") || lang.includes("ko")) userCountry = "Korea";
-else if (tz.includes("Ho_Chi_Minh") || tz.includes("Bangkok") || lang.includes("vi")) userCountry = "Vietnam";
-else if (tz.includes("Tokyo") || lang.includes("ja")) userCountry = "Japan";
-else if (tz.includes("Shanghai") || lang.includes("zh")) userCountry = "China";
-else if (tz.includes("New_York") || tz.includes("Los_Angeles") || lang.includes("en-US")) userCountry = "USA";
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  // 언어(ko)보다 실제 물리적 위치인 타임존을 우선 확인
+  if (tz.includes("Ho_Chi_Minh") || tz.includes("Bangkok") || tz.includes("Hanoi")) userCountry = "Vietnam";
+  else if (tz.includes("Seoul")) userCountry = "Korea";
+  else if (tz.includes("Tokyo")) userCountry = "Japan";
+  else if (tz.includes("Shanghai")) userCountry = "China";
+  else if (tz.includes("New_York") || tz.includes("Los_Angeles")) userCountry = "USA";
 } catch(e){}
 
 setTimeout(() => {
-try {
-fetch("https://ipapi.co/json/")
-.then(r => r.json())
-.then(d => { if (d && d.country_name) userCountry = d.country_name; })
-.catch(() => {});
-} catch(e){}
-}, 100);
+  try {
+    fetch("https://ipapi.co/json/")
+      .then(r => r.json())
+      .then(d => { 
+        if (d && d.country_name) {
+          userCountry = d.country_name === "Viet Nam" ? "Vietnam" : d.country_name;
+        } 
+      })
+      .catch(() => {});
+  } catch(e){}
+}, 50);
 
 let top10List = [];
 function fetchTop10() {
@@ -375,20 +379,21 @@ this.side = side;
 this.radius = 24; // 적 기체 크기
 this.tailLength = this.radius * 2 * 3; // 머리 지름(48) 대비 3배 길이 = 144px
 
-const speed = 7.5;
-if (this.side === "left") {
-  this.x = -60;
-  this.y = spawnY;
-  const angle = (28 + Math.random() * 20) * (Math.PI / 180);
-  this.vx = Math.cos(angle) * speed;
-  this.vy = Math.sin(angle) * speed;
-} else {
-  this.x = LOGICAL_WIDTH + 60;
-  this.y = spawnY;
-  const angle = (132 + Math.random() * 20) * (Math.PI / 180);
-  this.vx = Math.cos(angle) * speed;
-  this.vy = Math.sin(angle) * speed;
-}
+const speed = 3.75; // 속도 50% 감소 (7.5 -> 3.75)
+    this.y = spawnY;
+    // 하단 중앙(x: 225) 기준 좌우 25% (x: 112.5 ~ 337.5) 내를 타겟팅
+    const targetX = (LOGICAL_WIDTH * 0.25) + Math.random() * (LOGICAL_WIDTH * 0.50);
+    const targetY = LOGICAL_HEIGHT;
+
+    if (this.side === "left") {
+      this.x = -60;
+    } else {
+      this.x = LOGICAL_WIDTH + 60;
+    }
+
+    const angle = Math.atan2(targetY - this.y, targetX - this.x);
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
 
 this.coreAngle = 0;
 this.rotSpeed = 4.2;
@@ -1628,6 +1633,27 @@ lightningBolts = lightningBolts.filter(l => l.life > 0);
 blackHoles.forEach(b => b.update(dt, enemies));
 blackHoles = blackHoles.filter(b => b.life > 0);
 
+// 인게임(gameState === 1)일 때 오브젝트 뒤 배경 레이어에 TOP 10 점수판 렌더링
+if (gameState === 1) {
+  ctx.fillStyle = "rgba(10, 15, 30, 0.375)"; // 기존 0.75에서 50% 연하게
+  ctx.fillRect(10, 10, 165, 150);
+  ctx.strokeStyle = "rgba(0, 245, 255, 0.4)";
+  ctx.strokeRect(10, 10, 165, 150);
+  ctx.fillStyle = "rgba(0, 245, 255, 0.85)";
+  ctx.font = `bold 10px ${FONT_FAMILY}`;
+  ctx.textAlign = "left";
+  ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
+  top10List.forEach((item, idx) => {
+    const rowY = Math.round(38 + idx * 12);
+    ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
+    ctx.textAlign = "left";
+    ctx.fillText(`${idx+1}. [${item.country}] ${item.name}`, 14, rowY);
+    // 점수만 우측 끝(170px)에 정렬
+    ctx.textAlign = "right";
+    ctx.fillText(`${item.score}`, 170, rowY);
+  });
+}
+
 // 1. 기체 선택 화면
 if (gameState === 0) {
 ctx.fillStyle = "#00f5ff";
@@ -1703,34 +1729,33 @@ cards.forEach(c => {
   ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
 });
 
-const t5Y = 515;
-ctx.fillStyle = "rgba(10, 15, 30, 0.9)";
-drawRoundRect(ctx, 35, t5Y, LOGICAL_WIDTH - 70, 120, 8);
-ctx.fill();
-ctx.strokeStyle = "#00f5ff";
-ctx.lineWidth = 1.5;
-ctx.stroke();
+    const t10Y = 505;
+    ctx.fillStyle = "rgba(10, 15, 30, 0.9)";
+    drawRoundRect(ctx, 35, t10Y, LOGICAL_WIDTH - 70, 185, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#00f5ff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-ctx.fillStyle = "#00f5ff";
-ctx.font = `bold 12px ${FONT_FAMILY}`;
-ctx.textAlign = "center";
-ctx.fillText("★ GLOBAL TOP 5 PLAYERS ★", LOGICAL_WIDTH / 2, t5Y + 20);
+    ctx.fillStyle = "#00f5ff";
+    ctx.font = `bold 13px ${FONT_FAMILY}`; // 폰트 1px 확대
+    ctx.textAlign = "center";
+    ctx.fillText("★ GLOBAL TOP 10 PLAYERS ★", LOGICAL_WIDTH / 2, t10Y + 18);
 
-const top5 = top10List.slice(0, 5);
-ctx.font = `bold 11px ${FONT_FAMILY}`;
-if (top5.length === 0) {
-  ctx.fillStyle = "#a0b0c8";
-  ctx.fillText("WAITING FOR RECORDS...", LOGICAL_WIDTH / 2, t5Y + 68);
-} else {
-  top5.forEach((item, idx) => {
-    const rowY = Math.round(t5Y + 38 + idx * 16);
-    ctx.textAlign = "left";
-    ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
-    ctx.fillText(`${idx + 1}. [${item.country}] ${item.name}`, 44, rowY);
-    ctx.textAlign = "right";
-    ctx.fillText(`${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
-  });
-}
+    ctx.font = `bold 12px ${FONT_FAMILY}`; // 폰트 11px -> 12px 확대
+    if (top10List.length === 0) {
+      ctx.fillStyle = "#a0b0c8";
+      ctx.fillText("WAITING FOR RECORDS...", LOGICAL_WIDTH / 2, t10Y + 90);
+    } else {
+      top10List.slice(0, 10).forEach((item, idx) => {
+        const rowY = Math.round(t10Y + 34 + idx * 15);
+        ctx.textAlign = "left";
+        ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
+        ctx.fillText(`${idx + 1}. [${item.country}] ${item.name}`, 44, rowY);
+        ctx.textAlign = "right";
+        ctx.fillText(`${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
+      });
+    }
 
 ctx.textAlign = "left";
 ctx.fillStyle = "#b0bac9";
@@ -1917,7 +1942,7 @@ if (player.isAlive && player.laserWeaponTimer > 0 && curTime - player.lastLaserT
         const eIndex = enemies.indexOf(target);
         if (eIndex !== -1) enemies.splice(eIndex, 1);
 
-        score++;
+        score += 10;
         skillGauge += gaugePerKill;
         explosions.push(new ExplosionFX(target.x, target.y, "#00f5ff"));
         playExplosionSound();
@@ -1975,7 +2000,7 @@ for (let ei = enemies.length - 1; ei >= 0; ei--) {
       bullets.splice(bi, 1);
       if (e.hp <= 0) {
         enemies.splice(ei, 1);
-        score++;
+        score += 10;
         skillGauge += gaugePerKill;
         explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
         playExplosionSound();
@@ -2029,20 +2054,6 @@ if (skillGauge >= CONFIG.MAX_SKILL_GAUGE) {
   skillGauge = 0.0;
   triggerSlot();
 }
-
-ctx.fillStyle = "rgba(10, 15, 30, 0.75)";
-ctx.fillRect(10, 10, 160, 150);
-ctx.strokeStyle = "#00f5ff";
-ctx.strokeRect(10, 10, 160, 150);
-ctx.fillStyle = "#00f5ff";
-ctx.font = `bold 10px ${FONT_FAMILY}`;
-ctx.textAlign = "left";
-ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
-top10List.forEach((item, idx) => {
-  const rowY = Math.round(38 + idx * 12);
-  ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
-  ctx.fillText(`${idx+1}. [${item.country}] ${item.name} ${item.score}`, 14, rowY);
-});
 
 activeLasers.forEach(l => {
   ctx.strokeStyle = "#00f5ff";
@@ -2311,12 +2322,17 @@ requestAnimationFrame(safeGameLoop);
 }
 
 function handleGameOver() {
-setTimeout(() => {
-gameState = 3;
-nameInputOverlay.style.display = "block";
-nameInput.value = "";
-nameInput.focus();
-}, 800);
+  setTimeout(() => {
+    gameState = 3;
+    const isTop10Eligible = score > 0 && (top10List.length < 10 || score > top10List[top10List.length - 1].score);
+    if (isTop10Eligible) {
+      nameInputOverlay.style.display = "block";
+      nameInput.value = "";
+      nameInput.focus();
+    } else {
+      nameInputOverlay.style.display = "none";
+    }
+  }, 800);
 }
 
 // 최초 루프 구동
