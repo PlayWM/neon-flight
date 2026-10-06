@@ -15,7 +15,7 @@
 </head>
 <body>
 <div id="canvas-container">
-  <canvas id="gameCanvas"></canvas>
+  <canvas id="gameCanvas" width="450" height="800"></canvas>
   <div id="name-input-overlay">
     <input type="text" id="name-input" maxlength="12" placeholder="이름 입력 (필수)" autocomplete="off">
   </div>
@@ -32,18 +32,15 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web19";
+const VERSION_STR = "v20261006.Web20";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 
 // 폰트 깨짐 방지용 공통 글꼴 스택
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif";
 
-// 고해상도 레티나 스케일링 설정
-const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
-canvas.width = Math.floor(LOGICAL_WIDTH * dpr);
-canvas.height = Math.floor(LOGICAL_HEIGHT * dpr);
-canvas.style.width = LOGICAL_WIDTH + "px";
-canvas.style.height = LOGICAL_HEIGHT + "px";
+// 캔버스 크기 안정화 (깜빡임 원인 제거: 논리 좌표계와 캔버스 버퍼를 1:1로 확정)
+canvas.width = LOGICAL_WIDTH;
+canvas.height = LOGICAL_HEIGHT;
 
 try {
   ctx.imageSmoothingEnabled = true;
@@ -59,7 +56,6 @@ let sessionStartTime = 0;
 
 function sanitizeText(str) {
   if (!str) return "Unknown";
-  // 한글 완성형, 영문, 숫자, 마침표, 하이픈만 허용하여 XSS 및 글자 깨짐 차단
   return String(str).replace(/[^\w\s\uAC00-\uD7A3.-]/gi, '').trim().substring(0, 10) || "Unknown";
 }
 
@@ -78,6 +74,7 @@ function sanitizeText(str) {
     .catch(() => {});
 })();
 
+let top10List = [];
 async function fetchTop10() {
   try {
     const res = await fetch(FIREBASE_URL);
@@ -99,7 +96,6 @@ async function uploadScore(name, finalScore) {
   const cleanName = sanitizeText(name);
   if (!cleanName || cleanName === "Unknown") return;
 
-  // 플레이 시간 대비 이론상 불가능한 비정상 점수 검증 (치트 방지)
   const durationSec = Math.max(1, (performance.now() - sessionStartTime) / 1000);
   const maxPossibleScore = durationSec * 60 + 500;
   if (finalScore < 0 || finalScore > maxPossibleScore || finalScore > 100000) return;
@@ -231,6 +227,21 @@ function startBGMEngine() {
   }, 125);
 }
 
+function playShipSelectSound() {
+  playTone(330, 0.1, "triangle", 220, 0.25);
+  setTimeout(() => playTone(550, 0.2, "triangle", 330, 0.3), 80);
+}
+
+function playSlotEnterSound() {
+  playTone(440, 0.12, "triangle", 200, 0.25);
+  setTimeout(() => playTone(659, 0.15, "triangle", 250, 0.3), 100);
+}
+
+function playSlotSelectedSound() {
+  playTone(523, 0.15, "triangle", 0, 0.3);
+  setTimeout(() => playTone(784, 0.3, "sine", 150, 0.35), 180);
+}
+
 // =================================================================
 // 4. 그래픽 드로잉 및 도트 렌더러
 // =================================================================
@@ -313,7 +324,7 @@ function drawMatrix(matrix, cx, cy, colorMap, psize=3) {
 }
 
 // =================================================================
-// 5. 게임 엔티티 클래스 정의
+// 5. 게임 엔티티 클래스
 // =================================================================
 class Star {
   constructor() {
@@ -910,6 +921,7 @@ class Player {
     if (curTime - this.lastShot >= this.getFireInterval()) {
       this.lastShot = curTime;
       this.shotCount++;
+
       let baseDmg = Math.max(1, this.powerStat);
       if (this.pType === 1 || (this.pType === 3 && this.getDominantTrait() === "POWER")) {
         baseDmg = 1 + (this.powerStat - 1) * 2.2;
@@ -1034,39 +1046,8 @@ class Player {
 }
 
 // =================================================================
-// 6. 전역 인스턴스 및 룰렛 파라미터
+// 6. 상태 관리 및 룰렛 파라미터
 // =================================================================
-let stars = Array.from({ length: 65 }, () => new Star());
-let comets = Array.from({ length: 3 }, () => new Comet());
-let lastCometSpawnCheck = 0;
-
-let player = null;
-let bullets = [];
-let enemies = [];
-let bossMissiles = [];
-let bossDropItems = [];
-let lightningBolts = [];
-let blackHoles = [];
-let currentBoss = null;
-let explosions = [];
-let activeLasers = [];
-
-let gameState = 0; // 0:선택, 1:전투, 2:슬롯, 3:게임오버, 4:레전드연출, 5:시간룰렛
-let legendShowcaseStartTime = 0;
-
-let score = 0;
-let skillGauge = 0.0;
-let inGameElapsedTime = 0;
-let lastSpawnTime = 0;
-let nextBossTargetTime = 90.0;
-let gaugeBoostTimer = 0.0;
-let top10List = [];
-
-let minigameTargetOption = null;
-let minigameRollingTime = 30;
-let minigameSelectedTime = null;
-let minigameFinishTimestamp = 0;
-
 const PERIMETER_W = 380;
 const PERIMETER_H = 95;
 const TOTAL_PERIMETER = (PERIMETER_W + PERIMETER_H) * 2;
@@ -1129,6 +1110,16 @@ let lastRollTime = 0;
 let rollP = 4, rollS = 2, rollR = 1;
 let isTouchActive = false;
 const keysPressed = {};
+
+function generateBalancedStats() {
+  const combinations = [
+    [4, 2, 1],
+    [5, 1, 1]
+  ];
+  const chosen = combinations[Math.floor(Math.random() * combinations.length)];
+  const shuffled = chosen.sort(() => Math.random() - 0.5);
+  return { p: shuffled[0], s: shuffled[1], r: shuffled[2] };
+}
 
 function startBattle(type) {
   initAudio();
@@ -1194,7 +1185,7 @@ function applyChosenSkill(code, customDuration=null) {
 }
 
 // =================================================================
-// 7. 통합 사용자 입력 처리 (터치 / 마우스 / 키보드)
+// 7. 통합 포인터 입력 처리 (깜빡임 및 선택 불가 버그 해결)
 // =================================================================
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -1206,20 +1197,13 @@ function getCanvasCoords(clientX, clientY) {
   return { x, y };
 }
 
-function handlePointerMove(clientX, clientY) {
-  if (!isTouchActive || gameState !== 1 || !player) return;
-  const coords = getCanvasCoords(clientX, clientY);
-  player.targetX = coords.x;
-  player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - 120));
-}
-
-function handlePointerDown(clientX, clientY) {
+function handlePointerDown(e) {
   initAudio();
   isTouchActive = true;
-  const coords = getCanvasCoords(clientX, clientY);
+  const coords = getCanvasCoords(e.clientX, e.clientY);
 
-  // 1) 비행기 선택 화면 카드 클릭 영역 정확 보정
   if (gameState === 0) {
+    // 4개 비행기 카드 박스 선택 영역 (x: 35~415)
     if (coords.x >= 35 && coords.x <= 415) {
       if (coords.y >= 165 && coords.y <= 240) startBattle(0);
       else if (coords.y >= 250 && coords.y <= 325) startBattle(1);
@@ -1287,6 +1271,13 @@ function handlePointerDown(clientX, clientY) {
   }
 }
 
+function handlePointerMove(e) {
+  if (!isTouchActive || gameState !== 1 || !player) return;
+  const coords = getCanvasCoords(e.clientX, e.clientY);
+  player.targetX = coords.x;
+  player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - 120));
+}
+
 function handlePointerUp() {
   isTouchActive = false;
   if (player) {
@@ -1294,6 +1285,12 @@ function handlePointerUp() {
     player.targetY = player.y;
   }
 }
+
+// 표준 단일 포인터 이벤트 리스너 (터치, 마우스 중복 호출 차단)
+canvas.addEventListener("pointerdown", handlePointerDown);
+window.addEventListener("pointermove", handlePointerMove);
+window.addEventListener("pointerup", handlePointerUp);
+window.addEventListener("pointercancel", handlePointerUp);
 
 window.addEventListener("keydown", e => {
   initAudio();
@@ -1305,42 +1302,17 @@ window.addEventListener("keyup", e => {
   keysPressed[e.code] = false;
 });
 
-window.addEventListener("mousemove", e => { if (e.buttons === 1) handlePointerMove(e.clientX, e.clientY); });
-window.addEventListener("mousedown", e => handlePointerDown(e.clientX, e.clientY));
-window.addEventListener("mouseup", handlePointerUp);
-
-canvas.addEventListener("touchmove", e => {
-  e.preventDefault();
-  if (e.touches.length > 0) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: false });
-
-canvas.addEventListener("touchstart", e => {
-  e.preventDefault();
-  if (e.touches.length > 0) handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: false });
-
-canvas.addEventListener("touchend", e => {
-  e.preventDefault();
-  handlePointerUp();
-}, { passive: false });
-
-canvas.addEventListener("touchcancel", e => {
-  e.preventDefault();
-  handlePointerUp();
-}, { passive: false });
-
 // =================================================================
-// 8. 메인 프레임 루프
+// 8. 메인 프레임 렌더링 루프
 // =================================================================
-let lastTime = performance.now();
-
 function safeGameLoop(now) {
   try {
     const curTime = now / 1000;
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 캔버스 초기화
+    ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
     stars.forEach(s => s.update());
     
@@ -1443,7 +1415,6 @@ function safeGameLoop(now) {
         ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
       });
 
-      // 3) 글로벌 TOP 5 깨짐 방지 폰트 렌더링
       const t5Y = 515;
       ctx.fillStyle = "rgba(10, 15, 30, 0.9)";
       drawRoundRect(ctx, 35, t5Y, LOGICAL_WIDTH - 70, 120, 8);
@@ -1747,7 +1718,6 @@ function safeGameLoop(now) {
       stars.forEach(s => s.draw());
       comets.forEach(c => c.draw());
 
-      // 3) 인게임 TOP 10 고화질 렌더링
       ctx.fillStyle = "rgba(10, 15, 30, 0.75)";
       ctx.fillRect(10, 10, 160, 150);
       ctx.strokeStyle = "#00f5ff";
@@ -2044,15 +2014,10 @@ function safeGameLoop(now) {
 
 function handleGameOver() {
   setTimeout(() => {
-    if (isEligibleForTop10(score)) {
-      gameState = 3;
-      nameInputOverlay.style.display = "block";
-      nameInput.value = "";
-      nameInput.focus();
-    } else {
-      currentBgmMode = "select";
-      gameState = 0;
-    }
+    gameState = 3;
+    nameInputOverlay.style.display = "block";
+    nameInput.value = "";
+    nameInput.focus();
   }, 800);
 }
 
