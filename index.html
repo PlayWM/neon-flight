@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261006.Web26";
+const VERSION_STR = "v20261006.Web27";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -379,22 +379,25 @@ this.side = side;
 this.radius = 24; // 적 기체 크기
 this.tailLength = this.radius * 2 * 3; // 머리 지름(48) 대비 3배 길이 = 144px
 
-const speed = 3.75; // 속도 50% 감소 (7.5 -> 3.75)
-    this.y = spawnY;
-    // 하단 중앙(x: 225) 기준 좌우 25% (x: 112.5 ~ 337.5) 내를 타겟팅
+const speed = 3.75;
     const targetX = (LOGICAL_WIDTH * 0.25) + Math.random() * (LOGICAL_WIDTH * 0.50);
     const targetY = LOGICAL_HEIGHT;
 
-    if (this.side === "left") {
-      this.x = -60;
+    // 50% 확률로 기존 측면 스폰, 50% 확률로 상단 천장 좌/우 스폰
+    const isTopSpawn = Math.random() < 0.5;
+    if (isTopSpawn) {
+      this.y = -60;
+      this.x = this.side === "left" 
+        ? Math.random() * (LOGICAL_WIDTH * 0.35) 
+        : LOGICAL_WIDTH * 0.65 + Math.random() * (LOGICAL_WIDTH * 0.35);
     } else {
-      this.x = LOGICAL_WIDTH + 60;
+      this.y = spawnY;
+      this.x = this.side === "left" ? -60 : LOGICAL_WIDTH + 60;
     }
 
     const angle = Math.atan2(targetY - this.y, targetX - this.x);
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
-
 this.coreAngle = 0;
 this.rotSpeed = 4.2;
 this.active = true;
@@ -1635,11 +1638,11 @@ blackHoles = blackHoles.filter(b => b.life > 0);
 
 // 인게임(gameState === 1)일 때 오브젝트 뒤 배경 레이어에 TOP 10 점수판 렌더링
 if (gameState === 1) {
-  ctx.fillStyle = "rgba(10, 15, 30, 0.375)"; // 기존 0.75에서 50% 연하게
+ctx.fillStyle = "rgba(10, 15, 30, 0.18)"; // 0.375 대비 50% 추가 감소
   ctx.fillRect(10, 10, 165, 150);
-  ctx.strokeStyle = "rgba(0, 245, 255, 0.4)";
+  ctx.strokeStyle = "rgba(0, 245, 255, 0.2)"; // 테두리 투명도도 50% 감소
   ctx.strokeRect(10, 10, 165, 150);
-  ctx.fillStyle = "rgba(0, 245, 255, 0.85)";
+  ctx.fillStyle = "rgba(0, 245, 255, 0.45)"; // 타이틀 텍스트 투명도 감소
   ctx.font = `bold 10px ${FONT_FAMILY}`;
   ctx.textAlign = "left";
   ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
@@ -1694,12 +1697,12 @@ cards.forEach(c => {
 
   drawMatrix(PIXEL_PLAYERS[c.img], 75, c.y + 37, { 1: c.bdr, 2: "#fff", 3: "#ffe600", 4: "#ff8c00" }, 3);
 
-  ctx.textAlign = "left";
+ctx.textAlign = "left";
   ctx.fillStyle = "#fff";
-  ctx.font = `bold 16px ${FONT_FAMILY}`;
+  ctx.font = `bold 17px ${FONT_FAMILY}`; // 16px -> 17px
   ctx.fillText(c.name, 115, c.y + 20);
 
-  ctx.font = `bold 9px ${FONT_FAMILY}`;
+  ctx.font = `bold 10px ${FONT_FAMILY}`; // 9px -> 10px
   ctx.fillStyle = "#00f5ff";
   ctx.fillText(c.sub, 115, c.y + 35);
 
@@ -1710,15 +1713,23 @@ cards.forEach(c => {
 
   let xOffset = 115;
   const renderStat = (label, val, isHigh) => {
-    ctx.font = isHigh ? `bold 13px ${FONT_FAMILY}` : `11px ${FONT_FAMILY}`;
+    ctx.font = isHigh ? `bold 14px ${FONT_FAMILY}` : `12px ${FONT_FAMILY}`; // 13->14px, 11->12px
     ctx.fillStyle = isHigh ? "#ffe600" : "#a0b0c8";
     const txtStr = `${label} ${val}`;
     ctx.fillText(txtStr, xOffset, c.y + 58);
     xOffset += ctx.measureText(txtStr).width + 8;
 
-    ctx.font = `11px ${FONT_FAMILY}`;
+    ctx.font = `12px ${FONT_FAMILY}`; // 11px -> 12px
     ctx.fillStyle = "#647082";
     ctx.fillText("|", xOffset, c.y + 58);
+    xOffset += 10;
+  };
+
+  renderStat("PWR", c.p, isMaxP);
+  renderStat("SPD", c.s, isMaxS);
+  ctx.font = isMaxR ? `bold 14px ${FONT_FAMILY}` : `12px ${FONT_FAMILY}`; // 13->14px, 11->12px
+  ctx.fillStyle = isMaxR ? "#ffe600" : "#a0b0c8";
+  ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
     xOffset += 10;
   };
 
