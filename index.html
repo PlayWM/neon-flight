@@ -466,6 +466,7 @@ for (let i = 0; i < 4; i++) {
 
 ctx.restore();
 }
+}
 
 class MeteorManager {
 constructor() {
@@ -576,7 +577,6 @@ ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 75);
 drawMeteors() {
     this.meteors.forEach(m => m.draw());
   }
-}
 }
 
 class Star {
