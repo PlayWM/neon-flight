@@ -1055,9 +1055,9 @@ let reductionFactor = CONFIG.FIRE_RATE_REDUCTION;
 if (this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE")) reductionFactor = 0.11;
 const reduction = 1.0 / (1.0 + (this.fireRateStat - 1) * reductionFactor);
 let base = CONFIG.BASE_FIRE_INTERVAL;
-if (this.name === "Speed" || this.name === "Power") base *= 1.30;
-if (this.name === "Legend") base *= 1.30;
-return Math.max(0.03, base * reduction);
+    if (this.name === "Speed" || this.name === "Power") base *= 1.30;
+    if (this.name === "Legend") base *= 1.0; // 30% 발사 속도 증가 (간격 단축)
+    return Math.max(0.03, base * reduction);
 }
 update(dt, enemiesList, lightningList, bulletsList) {
 if (!this.isAlive) return;
