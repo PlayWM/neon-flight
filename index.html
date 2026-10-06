@@ -548,7 +548,7 @@ if (isBlink) {
 ctx.save();
 ctx.textAlign = "center";
 ctx.fillStyle = "#ff2200";
-ctx.font = bold 16px ${FONT_FAMILY};
+ctx.font = `bold 16px ${FONT_FAMILY}`;
 ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 75);
 
   ctx.fillStyle = "rgba(255, 34, 0, 0.25)";
@@ -577,7 +577,7 @@ this.y += this.speed;
 if (this.y > LOGICAL_HEIGHT) { this.y = 0; this.x = Math.random() * LOGICAL_WIDTH; }
 }
 draw() {
-ctx.fillStyle = rgb(${this.b}, ${this.b}, ${this.b + 50});
+ctx.fillStyle = `rgb(${this.b}, ${this.b}, ${this.b + 50})`;
 ctx.beginPath();
 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
 ctx.fill();
@@ -991,10 +991,10 @@ ctx.fillStyle = "#505064";
 ctx.fillRect(this.x - barW / 2, this.y - this.radius - 16, barW, 6);
 ctx.fillStyle = "#ff2d2d";
 ctx.fillRect(this.x - barW / 2, this.y - this.radius - 16, hpW, 6);
-ctx.fillStyle = "#ff2d2d";
-ctx.font = bold 11px ${FONT_FAMILY};
+ctx.fillStyle = "#ff2200";
+ctx.font = `bold 11px ${FONT_FAMILY}`;
 ctx.textAlign = "center";
-ctx.fillText(BOSS HP: ${this.hp}/20, this.x, this.y - this.radius - 20);
+ctx.fillText(`BOSS HP: ${this.hp}/20`, this.x, this.y - this.radius - 20);
 }
 }
 
@@ -1332,7 +1332,7 @@ else val = 3;               // 20%
 return {
 type: t.type,
 val: val,
-label: ${t.labelPrefix} +${val} (x${val}),
+label: `${t.labelPrefix} +${val} (x${val})`,
 col: t.col
 };
 }
@@ -1631,7 +1631,7 @@ blackHoles = blackHoles.filter(b => b.life > 0);
 // 1. 기체 선택 화면
 if (gameState === 0) {
 ctx.fillStyle = "#00f5ff";
-ctx.font = bold 28px ${FONT_FAMILY};
+ctx.font = `bold 28px ${FONT_FAMILY}`;
 ctx.textAlign = "center";
 ctx.fillText("NEON FLIGHT: OVERDRIVE", LOGICAL_WIDTH / 2, 60);
 
@@ -2119,7 +2119,7 @@ ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 
 } else if (gameState === 2) {
 ctx.textAlign = "center";
 ctx.fillStyle = "#00f5ff";
-ctx.font = bold 22px ${FONT_FAMILY};
+ctx.font = `bold 22px ${FONT_FAMILY}`;
 ctx.fillText("CHOOSE YOUR UPGRADE", LOGICAL_WIDTH / 2, 45);
 
 ctx.fillStyle = "#ffe600";
