@@ -302,6 +302,7 @@ MAX_ENEMY_HP_CAP: 30,
 BASE_ENEMY_SPEED: 3.6,
 LASER_WEAPON_INTERVAL: 1.0,
 LASER_BEAM_LINGER_TIME: 0.1,
+CLONE_SHIP_DURATION: 30.0,
 MAX_SKILL_GAUGE: 100.0,
 BASE_GAUGE_PER_KILL: 2.6,
 MIN_GAUGE_PER_KILL: 0.1,
@@ -1795,8 +1796,10 @@ if (player && player.isAlive) {
 player.update(dt, enemies, lightningBolts, bullets);
 player.shoot(curTime, bullets);
 
-// 1. 유성 업데이트 및 충돌
+// 1. 유성 업데이트 및 충돌 (전투 진행 중일 때만 안전 실행)
+if (meteorManager && player) {
 meteorManager.update(dt, elapsed, player, bullets);
+}
 
 let speedScale = 1.0;
 let widthScale = 1.0;
