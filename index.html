@@ -1880,13 +1880,15 @@ if (elapsed - lastSpawnTime > spawnInterval) {
         shieldProb = 0.045 * Math.pow(1.10, shieldSteps30s);
       }
 
-      // 기본 적 1기 생성
+// 기본 적 1기 생성
       enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb));
 
-      // 2. 기본 체력 3배인 정예 적 비행기 1~3기 랜덤 추가 스폰
-      const heavyCount = Math.floor(1 + Math.random() * 3);
-      for (let h = 0; h < heavyCount; h++) {
-        enemies.push(new Enemy(calculatedHp * 3, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb));
+      // 60초 이후에만 체력 3배 정예 적 비행기(1~3기) 추가 스폰
+      if (elapsed >= 60.0) {
+        const heavyCount = Math.floor(1 + Math.random() * 3);
+        for (let h = 0; h < heavyCount; h++) {
+          enemies.push(new Enemy(calculatedHp * 3, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb));
+        }
       }
     }
 if (!currentBoss && elapsed >= nextBossTargetTime) {
