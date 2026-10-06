@@ -1727,15 +1727,7 @@ ctx.textAlign = "left";
 
   renderStat("PWR", c.p, isMaxP);
   renderStat("SPD", c.s, isMaxS);
-  ctx.font = isMaxR ? `bold 14px ${FONT_FAMILY}` : `12px ${FONT_FAMILY}`; // 13->14px, 11->12px
-  ctx.fillStyle = isMaxR ? "#ffe600" : "#a0b0c8";
-  ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
-    xOffset += 10;
-  };
-
-  renderStat("PWR", c.p, isMaxP);
-  renderStat("SPD", c.s, isMaxS);
-  ctx.font = isMaxR ? `bold 13px ${FONT_FAMILY}` : `11px ${FONT_FAMILY}`;
+  ctx.font = isMaxR ? `bold 14px ${FONT_FAMILY}` : `12px ${FONT_FAMILY}`;
   ctx.fillStyle = isMaxR ? "#ffe600" : "#a0b0c8";
   ctx.fillText(`RATE ${c.r}`, xOffset, c.y + 58);
 });
