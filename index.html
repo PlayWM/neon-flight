@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261007.Web01";
+const VERSION_STR = "v20261007.Web02";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -579,16 +579,16 @@ const curTime = performance.now() / 1000;
 const isBlink = Math.floor(curTime / 0.15) % 2 === 0;
 if (isBlink) {
 ctx.save();
-ctx.textAlign = "center";
-ctx.fillStyle = "#ff2200";
-ctx.font = `bold 16px ${FONT_FAMILY}`;
-ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 75);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ff2200";
+  ctx.font = `bold 16px ${FONT_FAMILY}`;
+  ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 198);
 
   ctx.fillStyle = "rgba(255, 34, 0, 0.25)";
-  ctx.fillRect(20, 56, LOGICAL_WIDTH - 40, 26);
+  ctx.fillRect(20, 179, LOGICAL_WIDTH - 40, 26);
   ctx.strokeStyle = "#ff2200";
   ctx.lineWidth = 1.5;
-  ctx.strokeRect(20, 56, LOGICAL_WIDTH - 40, 26);
+  ctx.strokeRect(20, 179, LOGICAL_WIDTH - 40, 26);
   ctx.restore();
 }
 }
