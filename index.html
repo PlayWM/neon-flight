@@ -81,18 +81,25 @@ c.closePath();
 // =================================================================
 // 2. 국가 및 리더보드
 // =================================================================
-let userCountry = "Global";
+let userCountry = "Vietnam"; // 기본 fallback도 Global 대신 접속 환경 기준
 let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 let sessionStartTime = performance.now();
 
 try {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-  // 언어(ko)보다 실제 물리적 위치인 타임존을 우선 확인
-  if (tz.includes("Ho_Chi_Minh") || tz.includes("Bangkok") || tz.includes("Hanoi")) userCountry = "Vietnam";
-  else if (tz.includes("Seoul")) userCountry = "Korea";
-  else if (tz.includes("Tokyo")) userCountry = "Japan";
-  else if (tz.includes("Shanghai")) userCountry = "China";
-  else if (tz.includes("New_York") || tz.includes("Los_Angeles")) userCountry = "USA";
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").toLowerCase();
+  const offset = new Date().getTimezoneOffset(); // 분 단위 (-420 = UTC+7, -540 = UTC+9)
+  
+  if (tz.includes("ho_chi_minh") || tz.includes("hanoi") || tz.includes("bangkok") || offset === -420) {
+    userCountry = "Vietnam";
+  } else if (tz.includes("seoul") || offset === -540) {
+    userCountry = "Korea";
+  } else if (tz.includes("tokyo")) {
+    userCountry = "Japan";
+  } else if (tz.includes("shanghai") || tz.includes("beijing")) {
+    userCountry = "China";
+  } else if (tz.includes("new_york") || tz.includes("los_angeles") || tz.includes("chicago")) {
+    userCountry = "USA";
+  }
 } catch(e){}
 
 setTimeout(() => {
@@ -100,14 +107,16 @@ setTimeout(() => {
     fetch("https://ipapi.co/json/")
       .then(r => r.json())
       .then(d => { 
-        if (d && d.country_name) {
-          userCountry = d.country_name === "Viet Nam" ? "Vietnam" : d.country_name;
+        if (d && (d.country_name || d.country)) {
+          let c = d.country_name || d.country;
+          if (c === "Viet Nam" || c === "VN") userCountry = "Vietnam";
+          else if (c === "South Korea" || c === "KR") userCountry = "Korea";
+          else userCountry = c;
         } 
       })
       .catch(() => {});
   } catch(e){}
-}, 50);
-
+}, 30);
 let top10List = [];
 function fetchTop10() {
 try {
@@ -135,6 +144,16 @@ if (!cleanName || cleanName === "Unknown") return;
 const durationSec = Math.max(1, (performance.now() - sessionStartTime) / 1000);
 if (finalScore < 0 || finalScore > durationSec * 60 + 500) return;
 
+// 업로드 직전 국가명 유효성 최종 보정
+let finalCountry = userCountry;
+if (!finalCountry || finalCountry === "Global") {
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").toLowerCase();
+  const offset = new Date().getTimezoneOffset();
+  if (tz.includes("ho_chi_minh") || tz.includes("hanoi") || offset === -420) finalCountry = "Vietnam";
+  else if (tz.includes("seoul") || offset === -540) finalCountry = "Korea";
+  else finalCountry = "Vietnam";
+}
+
 try {
 fetch(FIREBASE_URL, {
 method: "POST",
@@ -142,14 +161,13 @@ headers: { "Content-Type": "application/json" },
 body: JSON.stringify({
 name: cleanName,
 score: Math.floor(finalScore),
-country: sanitizeText(userCountry),
+country: sanitizeText(finalCountry),
 token: sessionSecurityKey,
 time: Date.now() / 1000
 })
 }).then(() => fetchTop10()).catch(() => {});
 } catch(e){}
 }
-
 // =================================================================
 // 3. Web Audio 사운드 엔진
 // =================================================================
