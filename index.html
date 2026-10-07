@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261007.Web02";
+const VERSION_STR = "v20261007.Web03";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -579,17 +579,17 @@ const curTime = performance.now() / 1000;
 const isBlink = Math.floor(curTime / 0.15) % 2 === 0;
 if (isBlink) {
 ctx.save();
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ff2200";
-  ctx.font = `bold 16px ${FONT_FAMILY}`;
-  ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 198);
+ctx.textAlign = "center";
+ctx.fillStyle = "#ff2200";
+ctx.font = `bold 16px ${FONT_FAMILY}`;
+ctx.fillText("⚠ WARNING: GIANT METEOR INCOMING! ⚠", LOGICAL_WIDTH / 2, 198);
 
-  ctx.fillStyle = "rgba(255, 34, 0, 0.25)";
-  ctx.fillRect(20, 179, LOGICAL_WIDTH - 40, 26);
-  ctx.strokeStyle = "#ff2200";
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(20, 179, LOGICAL_WIDTH - 40, 26);
-  ctx.restore();
+ctx.fillStyle = "rgba(255, 34, 0, 0.25)";
+ctx.fillRect(20, 179, LOGICAL_WIDTH - 40, 26);
+ctx.strokeStyle = "#ff2200";
+ctx.lineWidth = 1.5;
+ctx.strokeRect(20, 179, LOGICAL_WIDTH - 40, 26);
+ctx.restore();
 }
 }
 drawMeteors() {
@@ -870,12 +870,17 @@ return ["P", "S", "D"][idx];
 update(dt) { this.y += this.speed * (dt * 60); }
 draw(curTime) {
 const type = this.getType(curTime);
-const pulse = Math.sin(curTime * 10) * 3;
+const pulse = Math.sin(curTime * 14) * 6; // 반짝임과 맥동 주기 강화
 const r = this.radius + pulse;
 
-ctx.fillStyle = "rgba(255, 215, 0, 0.4)";
+// 외곽 발광 링 강화
+const glowGrad = ctx.createRadialGradient(this.x, this.y, r, this.x, this.y, r + 14);
+glowGrad.addColorStop(0, "rgba(255, 255, 255, 0.8)");
+glowGrad.addColorStop(0.5, "rgba(255, 215, 0, 0.5)");
+glowGrad.addColorStop(1, "rgba(255, 215, 0, 0)");
+ctx.fillStyle = glowGrad;
 ctx.beginPath();
-ctx.arc(this.x, this.y, r + 6, 0, Math.PI * 2);
+ctx.arc(this.x, this.y, r + 14, 0, Math.PI * 2);
 ctx.fill();
 
 ctx.fillStyle = type === "P" ? "#ff0080" : (type === "S" ? "#00f5ff" : "#ffe600");
@@ -883,9 +888,8 @@ ctx.beginPath();
 ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
 ctx.fill();
 ctx.strokeStyle = "#ffffff";
-ctx.lineWidth = 2;
+ctx.lineWidth = 3.5; // 외곽선 두께 및 강조
 ctx.stroke();
-
 ctx.fillStyle = "#ffffff";
 ctx.font = `bold 15px ${FONT_FAMILY}`;
 ctx.textAlign = "center";
@@ -997,8 +1001,8 @@ constructor() {
 this.x = LOGICAL_WIDTH / 2;
 this.y = -80;
 this.targetY = 110;
-this.maxHp = 20;
-this.hp = 20;
+this.maxHp = 40; // 체력 2배 상향 (20 -> 40)
+this.hp = 40;
 this.radius = 48;
 this.isFullyEntered = false;
 this.vx = 2.0;
@@ -1013,7 +1017,9 @@ this.x += this.vx * (dt * 60);
 if (this.x <= this.radius + 15 || this.x >= LOGICAL_WIDTH - this.radius - 15) this.vx *= -1;
 if (curTime - this.lastFireTime >= 3.0) {
 this.lastFireTime = curTime;
-missiles.push(new Bullet(this.x, this.y + 40, 0, 5.5, 1, 6, "#ff2d2d"));
+// 탄환 2개 동시 발사 (좌우 간격 및 살짝 벌어지는 궤적)
+missiles.push(new Bullet(this.x - 16, this.y + 40, -0.6, 5.5, 1, 6, "#ff2d2d"));
+missiles.push(new Bullet(this.x + 16, this.y + 40, 0.6, 5.5, 1, 6, "#ff2d2d"));
 playTone(300, 0.15, "sawtooth", -150);
 }
 }
@@ -1074,7 +1080,7 @@ if (this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE")
 const reduction = 1.0 / (1.0 + (this.fireRateStat - 1) * reductionFactor);
 let base = CONFIG.BASE_FIRE_INTERVAL;
     if (this.name === "Speed" || this.name === "Power") base *= 1.30;
-    if (this.name === "Legend") base *= 1.0; // 30% 발사 속도 증가 (간격 단축)
+    if (this.name === "Legend") base *= 0.70; // 기존 대비 30% 추가 가속
     return Math.max(0.03, base * reduction);
 }
 update(dt, enemiesList, lightningList, bulletsList) {
@@ -1420,6 +1426,9 @@ let minigameRollingTime = 10;
 let minigameSelectedTime = null;
 let minigameFinishTimestamp = 0;
 
+let cardBlinkIndex = 0;
+let lastCardBlinkTime = 0;
+
 let randomPickShowcaseActive = false;
 let randomPickShowcaseStartTime = 0;
 let randomPickResult = null;
@@ -1453,7 +1462,8 @@ sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 
 if (type === 3) {
 if (Math.random() < 0.10) {
-player = new Player(4, "Legend", 3, 1.5, 3);
+const lStats = generateBalancedStats();
+player = new Player(4, "Legend", lStats.s, lStats.p, lStats.r);
 gameState = 4;
 legendShowcaseStartTime = performance.now() / 1000;
 playTone(523, 0.4, "triangle", 200, 0.3);
@@ -2186,12 +2196,18 @@ const cards = [
   { code: "SHIELD", title: "ENERGY SHIELD", desc: "Time Roulette", col: "#32ff78", subCol: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
 ];
 
-cards.forEach(c => {
-  ctx.fillStyle = "rgba(10, 15, 30, 0.85)";
+if (curTime - lastCardBlinkTime >= 0.2) {
+  lastCardBlinkTime = curTime;
+  cardBlinkIndex = Math.floor(Math.random() * cards.length);
+}
+
+cards.forEach((c, idx) => {
+  const isBlinking = (idx === cardBlinkIndex);
+  ctx.fillStyle = isBlinking ? "rgba(25, 35, 65, 0.95)" : "rgba(10, 15, 30, 0.85)";
   drawRoundRect(ctx, c.x, c.y, c.w, c.h, 10);
   ctx.fill();
-  ctx.strokeStyle = c.col;
-  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = isBlinking ? "#ffffff" : c.col;
+  ctx.lineWidth = isBlinking ? 4.5 : 2.5;
   ctx.stroke();
 
   ctx.textAlign = "center";
