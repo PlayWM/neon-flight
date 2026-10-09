@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261009.WebVectorFinal";
+const VERSION_STR = "v20261009.WebVectorFinal02";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -321,7 +321,7 @@ function drawVectorPlayer(c, type, color, scale = 1.0, flameHeight = 0) {
   c.save();
   c.scale(scale, scale);
   c.shadowColor = color;
-  c.shadowBlur = 6; // 1. 네온 효과 20% 증가 (5 -> 6)
+  c.shadowBlur = 6;
   c.lineJoin = "round";
   c.lineCap = "round";
 
@@ -533,7 +533,7 @@ function drawVectorPlayer(c, type, color, scale = 1.0, flameHeight = 0) {
   c.restore();
 }
 
-// 2. 이미지 개선 최종 반영: 적 기체 4종 & 정예기
+// 적 기체 4종 & 정예기 렌더링
 function drawVectorEnemy(c, designId, hpRatio, isHeavy, curTime) {
   c.save();
   c.lineJoin = "round";
@@ -661,10 +661,10 @@ function drawVectorEnemy(c, designId, hpRatio, isHeavy, curTime) {
   c.restore();
 }
 
-// 2, 3. 이미지 개선 및 20% 크기 확대(scale 1.02) 보스 렌더링
+// 20% 크기 확대 보스 렌더링
 function drawVectorBoss(c, curTime) {
   c.save();
-  c.scale(1.02, 1.02); // 3. 20% 확대 적용
+  c.scale(1.02, 1.02);
   c.lineJoin = "round";
 
   // 좌우 측면 거대 플라즈마 윙
@@ -912,12 +912,18 @@ class MeteorManager {
         }
       }
 
+      // 플레이어 충돌: nukeShieldActive(완전 무적) 상태면 유성도 방어
       if (player && player.isAlive && Math.hypot(player.x - m.x, player.y - m.y) < player.radius + m.radius) {
-        player.isAlive = false;
-        explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
-        explosions.push(new ExplosionFX(m.x, m.y, "#ff5500"));
-        playExplosionSound();
-        handleGameOver();
+        if (player.nukeShieldActive) {
+          explosions.push(new ExplosionFX(m.x, m.y, "#00f5ff"));
+          playTone(600, 0.1, "sawtooth");
+        } else {
+          player.isAlive = false;
+          explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
+          explosions.push(new ExplosionFX(m.x, m.y, "#ff5500"));
+          playExplosionSound();
+          handleGameOver();
+        }
       }
     });
   }
@@ -1030,7 +1036,7 @@ class BlackHole {
         e.hp = 0;
         enemiesList.splice(ei, 1);
         score += 1;
-        const bGauge = (player && player.shieldRemain > 0) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
+        const bGauge = (player && (player.shieldRemain > 0 || player.nukeShieldActive)) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
         skillGauge += bGauge;
         explosions.push(new ExplosionFX(e.x, e.y, "#969696"));
       }
@@ -1133,7 +1139,7 @@ class LightningBolt {
         e.hp = 0;
         enemiesList.splice(ei, 1);
         score += 1;
-        const lGauge = (player && player.shieldRemain > 0) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
+        const lGauge = (player && (player.shieldRemain > 0 || player.nukeShieldActive)) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
         skillGauge += lGauge;
         explosions.push(new ExplosionFX(e.x, e.y, "#00f5ff"));
       }
@@ -1335,7 +1341,7 @@ class BossEnemy {
     this.targetY = 110;
     this.maxHp = 40;
     this.hp = 40;
-    this.radius = 58; // 3. 보스 크기 20% 증가 (48 -> 58)
+    this.radius = 58;
     this.isFullyEntered = false;
     this.vx = 2.0;
     this.lastFireTime = 0.0;
@@ -1389,6 +1395,8 @@ class Player {
     this.frontShieldRemain = 0.0;
     this.speedFanBurstTimer = 0.0;
     this.lightningTimer = 0.0;
+    this.nukeShieldActive = false;
+    this.nukeShieldDropTimer = 0.0;
   }
   getDominantTrait() {
     if (this.pType === 0) return "SPEED";
@@ -1424,6 +1432,13 @@ class Player {
     if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
     if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
     if (this.frontShieldRemain > 0) this.frontShieldRemain = Math.max(0, this.frontShieldRemain - dt);
+
+    if (this.nukeShieldDropTimer > 0) {
+      this.nukeShieldDropTimer -= dt;
+      if (this.nukeShieldDropTimer <= 0) {
+        this.nukeShieldActive = false;
+      }
+    }
 
     if ((this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) && this.speedStat >= 8) {
       this.speedFanBurstTimer += dt;
@@ -1461,7 +1476,6 @@ class Player {
       }
     }
 
-    // 좌표 유효성 검사 (NaN 및 무한대 완벽 차단)
     if (!Number.isFinite(this.targetX)) this.targetX = this.x;
     if (!Number.isFinite(this.targetY)) this.targetY = this.y;
 
@@ -1469,7 +1483,6 @@ class Player {
     const dy = this.targetY - this.y;
     const dist = Math.hypot(dx, dy);
 
-    // 터치 중 급격한 이동 시에는 즉각 반응, 평상시에는 속도 기반 부드러운 이동
     if (dist > 0.5) {
       const maxStep = isTouchActive ? (dist * 0.85) : (this.getRealSpeed() * 60 * dt);
       if (dist <= maxStep || isTouchActive) {
@@ -1630,6 +1643,31 @@ class Player {
       ctx.restore();
     }
 
+    // 완전 무적 골드-시안 2중 보호막 렌더링
+    if (this.nukeShieldActive) {
+      ctx.save();
+      const pulse = Math.sin(curTime * 18.0) * 3;
+      ctx.strokeStyle = "#ffd700";
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = "#00f5ff";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 28 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#00f5ff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 33 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(0, 245, 255, 0.18)";
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 28 + pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     const activeSkills = [];
     if (this.laserWeaponTimer > 0) activeSkills.push({ name: "LASER", sec: `${Math.round(this.laserWeaponTimer)}s` });
     if (this.clonePlaneTimer > 0) activeSkills.push({ name: "DOUBLE", sec: `${Math.round(this.clonePlaneTimer)}s` });
@@ -1730,7 +1768,7 @@ let currentBoss = null;
 let explosions = [];
 let activeLasers = [];
 
-// 4. 스킬 완충 시 발사되는 전멸 레이저 빔 관리 리스트
+// 스킬 완충 시 발사되는 전멸 레이저 빔 관리 리스트
 let nukeBeamBeams = [];
 let isNukingTransition = false;
 
@@ -1812,16 +1850,20 @@ function initBattleState() {
   gameState = 1;
 }
 
-// 4. 스킬 게이지 100% 달성 시 순차 네온 광선 전멸 시퀀스
+// 스킬 게이지 100% 달성 시 순차 네온 광선 전멸 시퀀스 (5배 연장 & 2초 화면 유지 & 무적 보호막)
 function triggerSlotSequence() {
   if (isNukingTransition) return;
   isNukingTransition = true;
+
+  if (player) {
+    player.nukeShieldActive = true;
+    player.nukeShieldDropTimer = 0;
+  }
 
   const gw = 130, gx = LOGICAL_WIDTH - gw - 20, gy = LOGICAL_HEIGHT - 35;
   const startX = gx + gw / 2;
   const startY = gy;
 
-  // 화면 내 적들을 Y축 기준 하단(내 비행기 쪽)부터 상단 순으로 정렬
   const targets = enemies.filter(e => e.hp > 0).sort((a, b) => b.y - a.y);
   const colors = ["#00f5ff", "#ff007f", "#39ff14", "#ffe600", "#bf00ff", "#ff5500", "#00ffff"];
 
@@ -1829,37 +1871,34 @@ function triggerSlotSequence() {
     setTimeout(() => {
       isNukingTransition = false;
       enterSlotMenu();
-    }, 200);
+    }, 2000);
     return;
   }
 
-  const delayStep = 0.06; // 순차 발사 간격 (초)
+  const delayStep = 0.30;
   targets.forEach((tgt, index) => {
     setTimeout(() => {
       const now = performance.now() / 1000;
       const c = colors[index % colors.length];
-      // 0.2초간 유지되는 광선
       nukeBeamBeams.push({
         sx: startX, sy: startY,
         tx: tgt.x, ty: tgt.y,
         color: c,
         startTime: now,
-        duration: 0.2
+        duration: 1.0
       });
 
-      // 타겟 적기 파괴 및 폭발
       tgt.hp = 0;
       score += 1;
       explosions.push(new ExplosionFX(tgt.x, tgt.y, c));
-      playTone(500 + index * 60, 0.08, "triangle", 200, 0.2);
+      playTone(450 + index * 50, 0.18, "triangle", 250, 0.25);
 
-      // 마지막 발사 완료 후 슬롯 화면 진입
       if (index === targets.length - 1) {
         setTimeout(() => {
           enemies = [];
           isNukingTransition = false;
           enterSlotMenu();
-        }, 220);
+        }, 2000);
       }
     }, index * (delayStep * 1000));
   });
@@ -1887,6 +1926,10 @@ function applyChosenSkill(code, customDuration=null) {
     const addedDuration = customDuration || 30.0;
     player.shieldRemain = Math.min(30.0, player.shieldRemain + addedDuration);
   }
+
+  if (player && player.nukeShieldActive) {
+    player.nukeShieldDropTimer = 2.0;
+  }
 }
 
 // =================================================================
@@ -1903,6 +1946,7 @@ function getCanvasCoords(clientX, clientY) {
   const y = Number.isFinite(rawY) ? Math.max(10, Math.min(LOGICAL_HEIGHT - 10, rawY)) : LOGICAL_HEIGHT / 2;
   return { x, y };
 }
+
 function handlePointerDown(e) {
   initAudio();
   isTouchActive = true;
@@ -2087,7 +2131,7 @@ function safeGameLoop(now) {
     ctx.restore();
   }
 
-  // 1. 기체 선택 화면 (네온 20% 증가: 6 -> 7.2 / 4 -> 5)
+  // 1. 기체 선택 화면
   if (gameState === 0) {
     ctx.save();
     ctx.shadowColor = "#00f5ff";
@@ -2127,7 +2171,7 @@ function safeGameLoop(now) {
       ctx.fill();
 
       ctx.shadowColor = c.bdr;
-      ctx.shadowBlur = 5; // 4 * 1.2
+      ctx.shadowBlur = 5;
       ctx.strokeStyle = c.bdr;
       ctx.lineWidth = 1.8;
       ctx.stroke();
@@ -2265,6 +2309,8 @@ function safeGameLoop(now) {
     if (!isNukingTransition) {
       player.update(dt, enemies, lightningBolts, bullets);
       player.shoot(curTime, bullets);
+    } else if (player) {
+      player.update(dt, enemies, lightningBolts, bullets);
     }
 
     if (meteorManager && player) {
@@ -2318,13 +2364,11 @@ function safeGameLoop(now) {
 
       enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * 4), Math.random() < shieldProb, false));
 
-if (elapsed >= 60.0) {
+      if (elapsed >= 60.0) {
         const currentHeavyCount = enemies.filter(e => e.isHeavy).length;
         if (currentHeavyCount === 0) {
-          // 20초당 증가율 10% -> 15%로 50% 상향 조정 (1.10 -> 1.15)
           const heavyHpSteps = Math.floor((elapsed - 60.0) / 20.0);
           const heavyHpMultiplier = Math.pow(1.15, heavyHpSteps);
-          // 시작 체력 3배 -> 기존 비행기 10배로 변경
           const finalHeavyHp = Math.round(calculatedHp * 10 * heavyHpMultiplier);
 
           const bonusCount = Math.floor((elapsed - 60.0) / 30.0);
@@ -2396,7 +2440,7 @@ if (elapsed >= 60.0) {
             const eIndex = enemies.indexOf(target);
             if (eIndex !== -1) enemies.splice(eIndex, 1);
             score += 1;
-            const effectiveGauge = (player && player.shieldRemain > 0) ? (gaugePerKill * 0.3) : gaugePerKill;
+            const effectiveGauge = (player && (player.shieldRemain > 0 || player.nukeShieldActive)) ? (gaugePerKill * 0.3) : gaugePerKill;
             skillGauge += effectiveGauge;
             explosions.push(new ExplosionFX(target.x, target.y, "#00f5ff"));
             playExplosionSound();
@@ -2419,6 +2463,10 @@ if (elapsed >= 60.0) {
       const m = bossMissiles[i];
       if (player.isAlive && Math.hypot(player.x - m.x, player.y - m.y) < player.radius + m.radius) {
         bossMissiles.splice(i, 1);
+        if (player.nukeShieldActive) {
+          explosions.push(new ExplosionFX(m.x, m.y, "#00f5ff"));
+          continue;
+        }
         const isBlockedByFront = player.frontShieldRemain > 0 && m.y <= player.y;
         if (player.shieldRemain <= 0 && !isBlockedByFront) {
           player.isAlive = false;
@@ -2452,7 +2500,7 @@ if (elapsed >= 60.0) {
           if (e.hp <= 0) {
             enemies.splice(ei, 1);
             score += 1;
-            const effectiveGauge = (player && player.shieldRemain > 0) ? (gaugePerKill * 0.3) : gaugePerKill;
+            const effectiveGauge = (player && (player.shieldRemain > 0 || player.nukeShieldActive)) ? (gaugePerKill * 0.3) : gaugePerKill;
             skillGauge += effectiveGauge;
             explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
             playExplosionSound();
@@ -2462,6 +2510,13 @@ if (elapsed >= 60.0) {
       }
 
       if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
+        if (player.nukeShieldActive) {
+          enemies.splice(ei, 1);
+          explosions.push(new ExplosionFX(e.x, e.y, "#00f5ff"));
+          playExplosionSound();
+          continue;
+        }
+
         const hitAngle = Math.atan2(e.y - player.y, e.x - player.x);
         const isFrontHit = player.frontShieldRemain > 0 && (hitAngle >= -Math.PI * 0.85 && hitAngle <= -Math.PI * 0.15);
 
@@ -2508,7 +2563,6 @@ if (elapsed >= 60.0) {
       }
     }
 
-    // 4. 스킬 게이지 100% 충전 시 전멸 광선 시퀀스 트리거
     if (skillGauge >= CONFIG.MAX_SKILL_GAUGE && !isNukingTransition) {
       skillGauge = 0.0;
       triggerSlotSequence();
@@ -2532,23 +2586,20 @@ if (elapsed >= 60.0) {
       ctx.restore();
     });
 
-    // 4. 스킬 게이지 네온 전멸 레이저 렌더링 (0.2초간 노출 및 형광 글로우)
     nukeBeamBeams = nukeBeamBeams.filter(b => curTime - b.startTime < b.duration);
     nukeBeamBeams.forEach(b => {
       const alpha = Math.max(0, 1.0 - (curTime - b.startTime) / b.duration);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.shadowColor = b.color;
-      ctx.shadowBlur = 14; // 강력한 네온 글로우
+      ctx.shadowBlur = 14;
 
-      // 외곽 넓은 형광 빔
       ctx.strokeStyle = b.color;
       ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(b.sx, b.sy); ctx.lineTo(b.tx, b.ty);
       ctx.stroke();
 
-      // 내부 백색 고광택 코어 빔
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2.2;
       ctx.beginPath();
@@ -2628,7 +2679,7 @@ if (elapsed >= 60.0) {
     ctx.font = `bold 12px ${FONT_FAMILY}`;
     ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
 
-  } else if (gameState === 2) { // 3. 업그레이드 슬롯 선택 (네온 20% 증가: 3 -> 4)
+  } else if (gameState === 2) { // 3. 업그레이드 슬롯 선택
     ctx.textAlign = "center";
     ctx.fillStyle = "#00f5ff";
     ctx.font = `bold 22px ${FONT_FAMILY}`;
@@ -2659,7 +2710,7 @@ if (elapsed >= 60.0) {
       drawRoundRect(ctx, c.x, c.y, c.w, c.h, 10);
       ctx.fill();
       ctx.shadowColor = c.col;
-      ctx.shadowBlur = isBlinking ? 8.4 : 4; // 1. 네온 20% 증가
+      ctx.shadowBlur = isBlinking ? 8.4 : 4;
       ctx.strokeStyle = isBlinking ? "#ffffff" : c.col;
       ctx.lineWidth = isBlinking ? 2.8 : 1.8;
       ctx.stroke();
