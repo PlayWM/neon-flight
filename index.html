@@ -1080,6 +1080,10 @@ if (this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE")
 const reduction = 1.0 / (1.0 + (this.fireRateStat - 1) * reductionFactor);
 let base = CONFIG.BASE_FIRE_INTERVAL;
     if (this.name === "Speed" || this.name === "Power") base *= 1.30;
+    // 3. 속도 16렙 이상일 때 기본 발사 주기 33% 추가 단축
+    if ((this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) && this.speedStat >= 16) {
+      base *= 0.67;
+    }
     if (this.name === "Legend") base *= 0.70; // 기존 대비 30% 추가 가속
     return Math.max(0.03, base * reduction);
 }
@@ -1089,19 +1093,13 @@ if (this.clonePlaneTimer > 0) this.clonePlaneTimer = Math.max(0, this.clonePlane
 if (this.laserWeaponTimer > 0) this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
 if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
 
-if (this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) {
-  this.speedFrontShieldCycleTimer += dt;
-  if (this.speedFrontShieldCycleTimer >= 6.0) {
-    this.speedFrontShieldCycleTimer = 0;
-    this.frontShieldRemain = 2.0;
-    playTone(620, 0.2, "triangle", 150);
-  }
-}
+// 4. 레벨 무관 자동 전방 보호막 로직 삭제, 잔여 시간만 차감
 if (this.frontShieldRemain > 0) this.frontShieldRemain = Math.max(0, this.frontShieldRemain - dt);
 
+// 1. 속도 8렙시 10초 주기 부채꼴 발사 -> 발사 종료 후 5초간 전방 보호막 -> 5초간 일반 공격
 if ((this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED")) && this.speedStat >= 8) {
   this.speedFanBurstTimer += dt;
-  if (this.speedFanBurstTimer >= 15.0) {
+  if (this.speedFanBurstTimer >= 10.0) {
     this.speedFanBurstTimer = 0;
     for (let wave = 0; wave < 5; wave++) {
       setTimeout(() => {
@@ -1114,8 +1112,14 @@ if ((this.pType === 0 || (this.pType === 3 && this.getDominantTrait() === "SPEED
         playTone(880, 0.08, "square", -200);
       }, wave * 100);
     }
+    // 부채꼴 발사가 끝난 직후(0.5초 뒤) 전방 보호막 5초간 부여
+    setTimeout(() => {
+      if (!this.isAlive) return;
+      this.frontShieldRemain = 5.0;
+      playTone(620, 0.2, "triangle", 150);
+    }, 500);
   }
-}
+}}
 
 if ((this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE")) && this.fireRateStat >= 8) {
   this.lightningTimer += dt;
@@ -1124,7 +1128,7 @@ if ((this.pType === 2 || (this.pType === 3 && this.getDominantTrait() === "RATE"
     const mult = (this.fireRateStat >= 16) ? 5.0 : 3.0;
     const lRadius = this.radius * mult;
     const lx = this.x + (Math.random() - 0.5) * 160;
-    const ly = this.y - 112 - Math.random() * 96;
+    const ly = this.y - 146 - Math.random() * 125; // 30% 더 전방으로 배치
 
     lightningList.push(new LightningBolt(lx, ly, lRadius));
     playTone(850, 0.18, "sawtooth", -400, 0.25);
@@ -1874,12 +1878,12 @@ if (elapsed < 60.0) {
 const hpScale = (elapsed < 60.0) ? 0.7 : 1.0;
 const earlyGaugeMultiplier = (elapsed < 60.0) ? 1.5 : 1.0;
 
-// 8. 300초 이후 매 20초마다 킬당 게이지 10% 감소 (최소 0.1 한계)
+// 4. 게이지 감소량 20% 완화 및 최소치 50% 축소 (0.1 -> 0.05)
 const steps30s = Math.floor(elapsed / 30);
-let baseGaugePerKill = Math.max(CONFIG.MIN_GAUGE_PER_KILL, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.92, steps30s));
+let baseGaugePerKill = Math.max(0.05, CONFIG.BASE_GAUGE_PER_KILL * Math.pow(0.8, steps30s));
 if (elapsed >= 300.0) {
   const steps20sAfter300 = Math.floor((elapsed - 300.0) / 20.0);
-  baseGaugePerKill = Math.max(0.1, baseGaugePerKill * Math.pow(0.90, steps20sAfter300));
+  baseGaugePerKill = Math.max(0.05, baseGaugePerKill * Math.pow(0.8, steps20sAfter300));
 }
 const gaugePerKill = baseGaugePerKill * (gaugeBoostTimer > 0 ? 2 : 1) * earlyGaugeMultiplier;
 
@@ -1896,8 +1900,9 @@ if (elapsed - lastSpawnTime > spawnInterval) {
       lastSpawnTime = elapsed;
       let hpMultiplier = 1.0;
       if (elapsed >= 60.0) {
-        const hpSteps = Math.floor((elapsed - 60.0) / 30.0);
-        hpMultiplier = Math.pow(1.1, hpSteps);
+        // 3. 주기 20% 감소(30초 -> 24초), 증가율 20% 증가(10% -> 12%)
+        const hpSteps = Math.floor((elapsed - 60.0) / 20.0);
+        hpMultiplier = Math.pow(1.3, hpSteps);
       }
       const calculatedHp = Math.max(1, Math.round((2 + Math.random() * 3) * hpScale * hpMultiplier));
 
@@ -1912,13 +1917,21 @@ if (elapsed - lastSpawnTime > spawnInterval) {
 // 기본 적 1기 생성
       enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb, false));
 
-      // 60초 이후: 화면에 정예 기체가 모두 없을 때만(0개) 새로운 1~3기 무리 스폰
+// 60초 이후: 화면에 정예 기체가 모두 없을 때만(0개) 스폰
       if (elapsed >= 60.0) {
         const currentHeavyCount = enemies.filter(e => e.isHeavy).length;
         if (currentHeavyCount === 0) {
-          const spawnCount = Math.floor(1 + Math.random() * 3); // 1~3기 랜덤 결정
+          // 1. 20초마다 체력 10%씩 복리 증가
+          const heavyHpSteps = Math.floor((elapsed - 60.0) / 20.0);
+          const heavyHpMultiplier = Math.pow(1.10, heavyHpSteps);
+          const finalHeavyHp = Math.round(calculatedHp * 3 * heavyHpMultiplier);
+
+          // 2. 30초마다 기본 랜덤(1~3기)에 1기씩 무한 누적 추가 (60초: +0, 90초: +1, 120초: +2...)
+          const bonusCount = Math.floor((elapsed - 60.0) / 30.0);
+          const spawnCount = Math.floor(1 + Math.random() * 3) + bonusCount;
+
           for (let h = 0; h < spawnCount; h++) {
-            enemies.push(new Enemy(calculatedHp * 3, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb, true));
+            enemies.push(new Enemy(finalHeavyHp, (CONFIG.BASE_ENEMY_SPEED * 0.85) + Math.min(1.0, elapsed / 180.0) * 3.0, Math.floor(Math.random() * PIXEL_ENEMIES.length), Math.random() < shieldProb, true));
           }
         }
       }
@@ -2058,14 +2071,21 @@ for (let ei = enemies.length - 1; ei >= 0; ei--) {
     }
   }
 
-  if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
+if (player.isAlive && Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
     const hitAngle = Math.atan2(e.y - player.y, e.x - player.x);
     const isFrontHit = player.frontShieldRemain > 0 && (hitAngle >= -Math.PI * 0.85 && hitAngle <= -Math.PI * 0.15);
 
+    // 2. 보호막을 가진 적 기체는 내 비행기의 보호막으로도 막을 수 없음 (즉시 사망)
+    if (e.hasShield) {
+      player.isAlive = false;
+      explosions.push(new ExplosionFX(player.x, player.y, "#ff0080"));
+      playExplosionSound();
+      handleGameOver();
+      break;
+    }
+
     if (player.shieldRemain > 0 || isFrontHit) {
-      if (!e.hasShield) {
-        enemies.splice(ei, 1);
-      }
+      enemies.splice(ei, 1);
       explosions.push(new ExplosionFX(e.x, e.y, "#32ff78"));
       playExplosionSound();
     } else {
