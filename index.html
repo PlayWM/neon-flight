@@ -17,7 +17,7 @@
 <div id="canvas-container">
   <canvas id="gameCanvas" width="450" height="800"></canvas>
   <div id="name-input-overlay">
-    <input type="text" id="name-input" maxlength="12" placeholder="이름 입력 (필수)" autocomplete="off">
+    <input type="text" id="name-input" maxlength="12" placeholder="ENTER PILOT NAME" autocomplete="off">
   </div>
 </div>
 
@@ -2166,12 +2166,16 @@ const ORBIT_STARS = Array.from({ length: 10 }, (_, i) => ({
 
 function getPerimeterPoint(boxX, boxY, dist) {
   let d = ((dist % TOTAL_PERIMETER) + TOTAL_PERIMETER) % TOTAL_PERIMETER;
+  // 1. 윗변 (좌 -> 우)
   if (d < PERIMETER_W) return { x: boxX + d, y: boxY };
   d -= PERIMETER_W;
+  // 2. 우측변 (상 -> 하)
   if (d < PERIMETER_H) return { x: boxX + PERIMETER_W, y: boxY + d };
-  d -= PERIMETER_W;
+  d -= PERIMETER_H;
+  // 3. 아랫변 (우 -> 좌)
   if (d < PERIMETER_W) return { x: boxX + PERIMETER_W - d, y: boxY + PERIMETER_H };
   d -= PERIMETER_W;
+  // 4. 좌측변 (하 -> 상)
   return { x: boxX, y: boxY + PERIMETER_H - d };
 }
 
@@ -2257,21 +2261,40 @@ function safeGameLoop(now) {
   blackHoles.forEach(b => b.update(dt, enemies));
   blackHoles = blackHoles.filter(b => b.life > 0);
 
-  // 인게임 HUD TOP 10
+// 인게임 HUD TOP 10
   if (gameState === 1) {
     ctx.save();
-    ctx.fillStyle = "rgba(0, 245, 255, 0.35)";
     ctx.font = `bold 10px ${FONT_FAMILY}`;
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+
+    // 헤더 텍스트 (블러 제거, 얇은 외곽선으로 또렷함 확보)
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.lineWidth = 2.0;
     ctx.textAlign = "left";
+    ctx.strokeText("== GLOBAL TOP 10 ==", 16, 24);
+    ctx.fillStyle = "rgba(0, 245, 255, 0.35)";
     ctx.fillText("== GLOBAL TOP 10 ==", 16, 24);
 
     top10List.forEach((item, idx) => {
       const rowY = Math.round(38 + idx * 12);
+      const leftTxt = `${idx+1}. [${item.country}] ${item.name}`;
+      const rightTxt = `${item.score}`;
+
+      // 글자 뒷배경 어두운 외곽선 (식별력 대폭 상승)
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = 2.0;
+      ctx.textAlign = "left";
+      ctx.strokeText(leftTxt, 14, rowY);
+      ctx.textAlign = "right";
+      ctx.strokeText(rightTxt, 170, rowY);
+
+      // 본문 색상 채우기 (기존 투명도 유지)
       ctx.fillStyle = idx === 0 ? "rgba(255, 230, 0, 0.49)" : (idx < 3 ? "rgba(0, 245, 255, 0.45)" : "rgba(255, 255, 255, 0.42)");
       ctx.textAlign = "left";
-      ctx.fillText(`${idx+1}. [${item.country}] ${item.name}`, 14, rowY);
+      ctx.fillText(leftTxt, 14, rowY);
       ctx.textAlign = "right";
-      ctx.fillText(`${item.score}`, 170, rowY);
+      ctx.fillText(rightTxt, 170, rowY);
     });
     ctx.restore();
   }
@@ -2859,21 +2882,20 @@ function safeGameLoop(now) {
     ctx.font = `bold 24px ${FONT_FAMILY}`;
     ctx.fillText("UPGRADE SELECTION", LOGICAL_WIDTH / 2, 44);
 
-    // [위] vs [아래] 문구 삭제 및 확정 선택 안내 문구 강조/확대
     ctx.fillStyle = "#e2e8f0";
     ctx.font = `bold 13px ${FONT_FAMILY}`;
     ctx.shadowColor = "#00f5ff";
     ctx.shadowBlur = 4;
-    ctx.fillText("★ [ 확정선택 : 원하는 능력을 100% 획득 ] ★", LOGICAL_WIDTH / 2, 74);
+    ctx.fillText("★ [ GUARANTEED : 100% INSTANT UPGRADE ] ★", LOGICAL_WIDTH / 2, 74);
     ctx.shadowBlur = 0;
 
-const cards = [
+    const cards = [
       { code: "POWER_UP", title: "POWER UP + 1", desc: `Current Lv.${player ? Math.round(player.powerStat) : 1}`, col: "#00f5ff", subCol: "#ff0080", x: 35, y: 95, w: 175, h: 80 },
       { code: "SPEED_UP", title: "SPEED UP + 1", desc: `Current Lv.${player ? Math.round(player.speedStat) : 1}`, col: "#00f5ff", subCol: "#00f5ff", x: 240, y: 95, w: 175, h: 80 },
       { code: "FIRE_RATE", title: "FIRE RATE + 1", desc: `Current Lv.${player ? Math.round(player.fireRateStat) : 1}`, col: "#64aaff", subCol: "#ffe600", x: 35, y: 195, w: 175, h: 80 },
-      { code: "CLONE_SHIP", title: "CLONE SHIP", desc: "1 ~ 30초 랜덤", col: "#78a0ff", subCol: "#78a0ff", x: 240, y: 195, w: 175, h: 80 },
-      { code: "LASER_WEAPON", title: "LASER GUN", desc: "1 ~ 30초 랜덤", col: "#32ff78", subCol: "#00f5ff", x: 35, y: 295, w: 175, h: 80 },
-      { code: "SHIELD", title: "ENERGY SHIELD", desc: "1 ~ 30초 랜덤", col: "#32ff78", subCol: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
+      { code: "CLONE_SHIP", title: "CLONE SHIP", desc: "1 ~ 30s RANDOM", col: "#78a0ff", subCol: "#78a0ff", x: 240, y: 195, w: 175, h: 80 },
+      { code: "LASER_WEAPON", title: "LASER GUN", desc: "1 ~ 30s RANDOM", col: "#32ff78", subCol: "#00f5ff", x: 35, y: 295, w: 175, h: 80 },
+      { code: "SHIELD", title: "ENERGY SHIELD", desc: "1 ~ 30s RANDOM", col: "#32ff78", subCol: "#32ff78", x: 240, y: 295, w: 175, h: 80 }
     ];
 
 // 반짝임 인덱스 업데이트 코드 삭제
@@ -2929,7 +2951,7 @@ const cards = [
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffd700";
     ctx.font = `bold 12px ${FONT_FAMILY}`;
-    ctx.fillText("★ [랜덤 선택: 최대 3배 대박 찬스 (확률 뽑기)] ★", btnMult.x + btnMult.w / 2, btnMult.y + 24);
+    ctx.fillText("★ [ RANDOM CHANCE : UP TO 3X MULTIPLIER ] ★", btnMult.x + btnMult.w / 2, btnMult.y + 24);
 
     ctx.fillStyle = currentMultOption.col;
     ctx.font = `bold 24px ${FONT_FAMILY}`;
@@ -2937,7 +2959,7 @@ const cards = [
 
     ctx.fillStyle = "#a5c0e0";
     ctx.font = `11px ${FONT_FAMILY}`;
-    ctx.fillText("x1(50%) / x2(30%) / x3(20%) 중 랜덤추첨", btnMult.x + btnMult.w / 2, btnMult.y + 80);
+    ctx.fillText("x1 (50%) / x2 (30%) / x3 (20%) CHANCE", btnMult.x + btnMult.w / 2, btnMult.y + 80);
     ctx.restore();
 
     if (randomPickShowcaseActive) {
