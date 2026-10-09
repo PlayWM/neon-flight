@@ -78,6 +78,36 @@ function drawStarShape(c, cx, cy, spikes, outerRadius, innerRadius) {
   c.closePath();
 }
 
+// 모바일 발열 개선: 정적 성운 배경을 오프스크린 캔버스에 1회 캐싱
+const bgOffscreen = document.createElement("canvas");
+bgOffscreen.width = LOGICAL_WIDTH;
+bgOffscreen.height = LOGICAL_HEIGHT;
+const bgCtx = bgOffscreen.getContext("2d");
+
+function initNebulaCache() {
+  const bgGrad = bgCtx.createLinearGradient(0, 0, 0, LOGICAL_HEIGHT);
+  bgGrad.addColorStop(0, "#03020c");
+  bgGrad.addColorStop(0.5, "#060718");
+  bgGrad.addColorStop(1, "#02030d");
+  bgCtx.fillStyle = bgGrad;
+  bgCtx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+  const neb1 = bgCtx.createRadialGradient(90, 190, 15, 90, 190, 225);
+  neb1.addColorStop(0, "rgba(180, 210, 255, 0.16)");
+  neb1.addColorStop(0.45, "rgba(90, 40, 160, 0.10)");
+  neb1.addColorStop(1, "rgba(0, 0, 0, 0)");
+  bgCtx.fillStyle = neb1;
+  bgCtx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+  const neb2 = bgCtx.createRadialGradient(350, 640, 20, 350, 640, 245);
+  neb2.addColorStop(0, "rgba(200, 230, 255, 0.14)");
+  neb2.addColorStop(0.5, "rgba(0, 180, 230, 0.08)");
+  neb2.addColorStop(1, "rgba(0, 0, 0, 0)");
+  bgCtx.fillStyle = neb2;
+  bgCtx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+}
+initNebulaCache();
+
 // =================================================================
 // 2. 국가 및 리더보드
 // =================================================================
@@ -1348,9 +1378,10 @@ class ExplosionFX {
     this.life = 1.0;
     this.decay = 2.5 + Math.random() * 1.5;
     this.particles = [];
-    for (let i = 0; i < 16; i++) {
+    const particleCount = 9; // 16개 -> 9개로 조절하여 가비지 컬렉터 부하 완화
+    for (let i = 0; i < particleCount; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const spd = 2 + Math.random() * 6;
+      const spd = 2 + Math.random() * 5;
       this.particles.push({
         x, y,
         vx: Math.cos(ang) * spd,
@@ -1543,6 +1574,7 @@ class Enemy {
     this.hasShield = hasShield;
     this.isHeavy = isHeavy;
     this.animOffset = Math.random() * 10;
+    this.isDead = false; // 중복 킬/점수 획득 방지 플래그
   }
   update(dt, elapsed, speedScale=1.0, widthScale=1.0) {
     const effSpeed = this.speed * speedScale;
@@ -1600,8 +1632,21 @@ class Enemy {
       ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, barW, 3);
       ctx.fillStyle = "#32ff78";
       ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, hpW, 3);
-    }
+}
   }
+}
+
+// 점수 및 게이지 획득 오류 방지 통합 함수
+function safeKillEnemy(e, customColor="#ffe600") {
+  if (!e || e.isDead) return false;
+  e.isDead = true;
+  e.hp = 0;
+  score = Math.max(0, Math.floor(score + 1));
+  const gBase = (typeof earlyGaugeMultiplier !== "undefined" ? earlyGaugeMultiplier : 1.0);
+  const effectiveGauge = (player && player.shieldRemain > 0) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
+  skillGauge = Math.min(CONFIG.MAX_SKILL_GAUGE, skillGauge + effectiveGauge);
+  explosions.push(new ExplosionFX(e.x, e.y, customColor));
+  return true;
 }
 
 class BossEnemy {
@@ -1722,6 +1767,7 @@ function drawHedgehogLauncher(c, curTime) {
 
 let nukeBeamBeams = [];
 let isNukingTransition = false;
+let resumeCountdown = 0.0; // 업그레이드 복귀 시 깜짝 시작 방지 타이머
 
 let gameState = 0;
 let legendShowcaseStartTime = 0;
@@ -1812,60 +1858,58 @@ function triggerSlotSequence() {
   isNukingTransition = true;
   hedgehogLauncher.isExecutingNuke = true;
   hedgehogLauncher.flashAlpha = 1.0;
-  hedgehogLauncher.timeStopTimer = 2.0;
+  hedgehogLauncher.timeStopTimer = 2.0; // 정확히 2.0초 정지 유지
 
   playTone(800, 0.35, "sawtooth", -300, 0.3);
 
-  const targets = enemies.filter(e => e.hp > 0).sort((a, b) => b.y - a.y);
+  const validTargets = enemies.filter(e => !e.isDead && e.hp > 0).sort((a, b) => b.y - a.y);
   const colors = ["#00f5ff", "#ff007f", "#39ff14", "#ffe600", "#bf00ff", "#ff5500", "#ffffff"];
 
-  if (targets.length === 0) {
-    setTimeout(() => {
-      finishNukeSequence();
-    }, 2000);
+  if (validTargets.length === 0) {
+    setTimeout(finishNukeSequence, 2000);
     return;
   }
 
-  const fireInterval = Math.max(0.04, 1.8 / targets.length);
+  // 레이저 노출 시간(0.3초) 및 파괴 파티클 완결 시간을 확보하기 위해 사격은 1.3초 안에 전량 발사
+  const totalFireDuration = 1.3;
+  // 적 개체 수가 많으면 1개 또는 최대 4개까지 동시 다중 발사
+  const batchSize = Math.min(4, Math.max(1, Math.ceil(validTargets.length / 8)));
+  const totalBatches = Math.ceil(validTargets.length / batchSize);
+  const batchInterval = totalFireDuration / totalBatches;
 
-  targets.forEach((tgt, index) => {
+  for (let b = 0; b < totalBatches; b++) {
+    const currentBatch = validTargets.slice(b * batchSize, (b + 1) * batchSize);
     setTimeout(() => {
       const now = performance.now() / 1000;
-      const c = colors[index % colors.length];
-
-      nukeBeamBeams.push({
-        sx: hedgehogLauncher.x,
-        sy: hedgehogLauncher.y,
-        tx: tgt.x,
-        ty: tgt.y,
-        color: c,
-        startTime: now,
-        duration: 0.25
+      currentBatch.forEach((tgt, subIdx) => {
+        const c = colors[(b * batchSize + subIdx) % colors.length];
+        nukeBeamBeams.push({
+          sx: hedgehogLauncher.x,
+          sy: hedgehogLauncher.y,
+          tx: tgt.x,
+          ty: tgt.y,
+          color: c,
+          startTime: now,
+          duration: 0.30 // 레이저 노출 시간 0.3초
+        });
+        safeKillEnemy(tgt, c);
+        playTone(600 + ((b + subIdx) % 8) * 50, 0.08, "triangle", 180, 0.2);
       });
+    }, b * (batchInterval * 1000));
+  }
 
-      tgt.hp = 0;
-      score += 1;
-      explosions.push(new ExplosionFX(tgt.x, tgt.y, c));
-      playTone(600 + (index % 10) * 45, 0.08, "triangle", 200, 0.2);
-
-      if (index === targets.length - 1) {
-        setTimeout(() => {
-          finishNukeSequence();
-        }, Math.max(200, (2.0 - targets.length * fireInterval) * 1000));
-      }
-    }, index * (fireInterval * 1000));
-  });
+  // 정확히 2.0초가 되는 순간 잔여 정리 및 업그레이드 화면 진입
+  setTimeout(finishNukeSequence, 2000);
 }
 
 function finishNukeSequence() {
-  enemies = [];
+  enemies = enemies.filter(e => !e.isDead && e.hp > 0);
   isNukingTransition = false;
   hedgehogLauncher.active = false;
   hedgehogLauncher.emergeProgress = 0;
   hedgehogLauncher.isExecutingNuke = false;
   enterSlotMenu();
 }
-
 function enterSlotMenu() {
   playTone(440, 0.12, "triangle", 200, 0.25);
   setTimeout(() => playTone(659, 0.15, "triangle", 250, 0.3), 100);
@@ -1875,7 +1919,7 @@ function enterSlotMenu() {
   gameState = 2;
 }
 
-function applyChosenSkill(code, customDuration=null) {
+  function applyChosenSkill(code, customDuration=null) {
   if (code === "POWER_UP") player.powerStat++;
   else if (code === "SPEED_UP") player.speedStat += (player.name === "Power" ? 0.7 : 1.0);
   else if (code === "FIRE_RATE") player.fireRateStat++;
@@ -1888,6 +1932,7 @@ function applyChosenSkill(code, customDuration=null) {
     const addedDuration = customDuration || 30.0;
     player.shieldRemain = Math.min(30.0, player.shieldRemain + addedDuration);
   }
+  resumeCountdown = 1.5; // 인게임 복귀 전 1.5초 안전 대기
 }
 
 // =================================================================
@@ -2086,36 +2131,10 @@ let activeLasers = [];
 let lastTime = performance.now();
 
 function drawDeepSpaceBackground(c, curTime) {
-  const bgGrad = c.createLinearGradient(0, 0, 0, LOGICAL_HEIGHT);
-  bgGrad.addColorStop(0, "#03020c");
-  bgGrad.addColorStop(0.5, "#060718");
-  bgGrad.addColorStop(1, "#02030d");
-  c.fillStyle = bgGrad;
-  c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
-
-  const neb1X = 90 + Math.sin(curTime * 0.25) * 45;
-  const neb1Y = 190 + Math.cos(curTime * 0.20) * 50;
-  const neb1R = 225 + Math.sin(curTime * 0.30) * 45;
-  const neb1 = c.createRadialGradient(neb1X, neb1Y, 15, neb1X, neb1Y, neb1R);
-  neb1.addColorStop(0, "rgba(180, 210, 255, 0.16)");
-  neb1.addColorStop(0.45, "rgba(90, 40, 160, 0.10)");
-  neb1.addColorStop(1, "rgba(0, 0, 0, 0)");
-  c.fillStyle = neb1;
-  c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
-
-  const neb2X = 350 + Math.cos(curTime * 0.22) * 40;
-  const neb2Y = 640 + Math.sin(curTime * 0.26) * 50;
-  const neb2R = 245 + Math.cos(curTime * 0.28) * 45;
-  const neb2 = c.createRadialGradient(neb2X, neb2Y, 20, neb2X, neb2Y, neb2R);
-  neb2.addColorStop(0, "rgba(200, 230, 255, 0.14)");
-  neb2.addColorStop(0.5, "rgba(0, 180, 230, 0.08)");
-  neb2.addColorStop(1, "rgba(0, 0, 0, 0)");
-  c.fillStyle = neb2;
-  c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
-
+  // 매 프레임 그라데이션 재연산 제거 -> 캐시 캔버스 고속 블릿으로 발열 대폭 억제
+  c.drawImage(bgOffscreen, 0, 0);
   stars.forEach(s => { s.update(); s.draw(); });
 }
-
 function safeGameLoop(now) {
   const curTime = now / 1000;
   const dt = Math.min(0.05, (now - lastTime) / 1000);
@@ -2318,16 +2337,21 @@ function safeGameLoop(now) {
 
   } else if (gameState === 1) { // 2. 인게임 전투
     const isFrozen = (hedgehogLauncher.timeStopTimer > 0);
+    const isResuming = (resumeCountdown > 0);
+
     if (isFrozen) {
       hedgehogLauncher.timeStopTimer = Math.max(0, hedgehogLauncher.timeStopTimer - dt);
+    } else if (isResuming) {
+      resumeCountdown = Math.max(0, resumeCountdown - dt);
     } else {
       inGameElapsedTime += dt;
     }
     const elapsed = inGameElapsedTime;
+    const isInputLocked = isFrozen || isResuming;
 
     if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
-    if (player && player.isAlive && !isFrozen) {
+    if (player && player.isAlive && !isInputLocked) {
       let kx = 0, ky = 0;
       if (keysPressed["arrowleft"] || keysPressed["a"] || keysPressed["keya"]) kx -= 1;
       if (keysPressed["arrowright"] || keysPressed["d"] || keysPressed["keyd"]) kx += 1;
@@ -2341,12 +2365,12 @@ function safeGameLoop(now) {
       }
     }
 
-    if (!isNukingTransition && !isFrozen && player) {
+    if (!isNukingTransition && !isInputLocked && player) {
       player.update(dt, enemies, lightningBolts, bullets);
       player.shoot(curTime, bullets);
     }
 
-    if (meteorManager && player && !isFrozen) {
+    if (meteorManager && player && !isInputLocked) {
       meteorManager.update(dt, elapsed, player, bullets);
     }
 
@@ -2736,6 +2760,18 @@ function safeGameLoop(now) {
     ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
     ctx.font = `bold 12px ${FONT_FAMILY}`;
     ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
+
+    // 복귀 시 깜짝 시작 방지 HUD
+    if (resumeCountdown > 0) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#00f5ff";
+      ctx.font = `bold 24px ${FONT_FAMILY}`;
+      ctx.shadowColor = "#00f5ff";
+      ctx.shadowBlur = 8;
+      ctx.fillText(`GET READY! ${resumeCountdown.toFixed(1)}s`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT * 0.45);
+      ctx.restore();
+    }
 
   } else if (gameState === 2) { // 3. 업그레이드 슬롯 선택
     ctx.textAlign = "center";
