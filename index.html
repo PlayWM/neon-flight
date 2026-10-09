@@ -887,15 +887,14 @@ getRealSpeed() {
       return CONFIG.BASE_PLAYER_SPEED + (this.speedStat * CONFIG.STAT_SPEED_FACTOR);
     }
 
-    // 2. 스피드형 기본(Lv.5) 기준 속도 산출
+    // 2. 스피드형 기본(Lv.5) 기준 속도 산출 (14.82)
     const baseSpeedLv5 = CONFIG.BASE_PLAYER_SPEED + (5 * CONFIG.STAT_SPEED_FACTOR * 2.2 * 1.2);
 
-    // Lv.1일 때 정확히 baseSpeedLv5의 50%가 되도록 기본값 및 레벨당 증가량 산정
-    // Lv.1 속도 = baseSpeedLv5 * 0.5, Lv.5 속도 = baseSpeedLv5
-    const speedLv1 = baseSpeedLv5 * 0.50;
-    const speedPerLevel = (baseSpeedLv5 - speedLv1) / 4.0; // 레벨 1 상승당 증가폭
+    // 3. Lv.1 속도를 스피드형 대비 30% 수준으로 세팅 (4.446)
+    const speedLv1 = baseSpeedLv5 * 0.30;
+    const speedPerLevel = (baseSpeedLv5 - speedLv1) / 4.0; // 레벨당 약 2.5935 증가
 
-    // 현재 기체의 SPD 레벨(speedStat)을 반영한 최종 이동속도 계산
+    // 4. 파워형, 트윈형, 랜덤 기체 모두 자신의 SPD 레벨에 맞추어 연산 적용
     return speedLv1 + (Math.max(1, this.speedStat) - 1) * speedPerLevel;
   }
   getFireInterval() {
