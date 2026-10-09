@@ -1892,12 +1892,16 @@ function triggerSlotSequence() {
           duration: 0.30
         });
 
-        // 적 즉시 파괴 처리 (보호막 무시 및 즉각 폭발/점수 처리)
+       // 적 즉시 파괴 처리 (보호막 무시 및 즉각 폭발/점수 처리)
         tgt.hasShield = false;
         tgt.hp = 0;
         tgt.isDead = true;
         score += 1;
         explosions.push(new ExplosionFX(tgt.x, tgt.y, c));
+
+        // 배열에서 즉시 제거하여 잔상 및 피격 판정 원천 차단
+        const targetIdx = enemies.indexOf(tgt);
+        if (targetIdx !== -1) enemies.splice(targetIdx, 1);
 
         // 고슴도치 레이저 전용 타격 사운드 (강력한 펄스 + 묵직한 레이저 피치)
         playTone(950 + ((b + subIdx) % 5) * 80, 0.12, "sawtooth", -350, 0.28);
@@ -2689,7 +2693,8 @@ function safeGameLoop(now) {
     bullets.forEach(b => b.draw());
     bossMissiles.forEach(m => m.draw());
     bossDropItems.forEach(it => it.draw(curTime));
-    enemies.forEach(e => e.draw(curTime));
+    // 체력이 남아있고 파괴되지 않은 적만 렌더링 (레이저 피격 즉시 화면에서 소멸)
+    enemies.filter(e => !e.isDead && e.hp > 0).forEach(e => e.draw(curTime));
     blackHoles.forEach(b => b.draw());
     lightningBolts.forEach(l => l.draw());
     if (currentBoss) currentBoss.draw(curTime);
