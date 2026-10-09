@@ -1767,7 +1767,6 @@ function drawHedgehogLauncher(c, curTime) {
 
 let nukeBeamBeams = [];
 let isNukingTransition = false;
-let resumeCountdown = 0.0; // 업그레이드 복귀 시 깜짝 시작 방지 타이머
 
 let gameState = 0;
 let legendShowcaseStartTime = 0;
@@ -1890,10 +1889,19 @@ function triggerSlotSequence() {
           ty: tgt.y,
           color: c,
           startTime: now,
-          duration: 0.30 // 레이저 노출 시간 0.3초
+          duration: 0.30
         });
-        safeKillEnemy(tgt, c);
-        playTone(600 + ((b + subIdx) % 8) * 50, 0.08, "triangle", 180, 0.2);
+
+        // 적 즉시 파괴 처리 (보호막 무시 및 즉각 폭발/점수 처리)
+        tgt.hasShield = false;
+        tgt.hp = 0;
+        tgt.isDead = true;
+        score += 1;
+        explosions.push(new ExplosionFX(tgt.x, tgt.y, c));
+
+        // 고슴도치 레이저 전용 타격 사운드 (강력한 펄스 + 묵직한 레이저 피치)
+        playTone(950 + ((b + subIdx) % 5) * 80, 0.12, "sawtooth", -350, 0.28);
+        playTone(320, 0.08, "triangle", -100, 0.2);
       });
     }, b * (batchInterval * 1000));
   }
@@ -1902,8 +1910,10 @@ function triggerSlotSequence() {
   setTimeout(finishNukeSequence, 2000);
 }
 
-function finishNukeSequence() {
+ function finishNukeSequence() {
+  // 타임스탑 동안 파괴된 적들을 배열에서 완전히 제거
   enemies = enemies.filter(e => !e.isDead && e.hp > 0);
+  nukeBeamBeams = [];
   isNukingTransition = false;
   hedgehogLauncher.active = false;
   hedgehogLauncher.emergeProgress = 0;
@@ -1932,7 +1942,7 @@ function enterSlotMenu() {
     const addedDuration = customDuration || 30.0;
     player.shieldRemain = Math.min(30.0, player.shieldRemain + addedDuration);
   }
-  resumeCountdown = 1.5; // 인게임 복귀 전 1.5초 안전 대기
+  gameState = 1; // 대기 없이 즉시 게임 시작
 }
 
 // =================================================================
@@ -2337,17 +2347,12 @@ function safeGameLoop(now) {
 
   } else if (gameState === 1) { // 2. 인게임 전투
     const isFrozen = (hedgehogLauncher.timeStopTimer > 0);
-    const isResuming = (resumeCountdown > 0);
-
     if (isFrozen) {
       hedgehogLauncher.timeStopTimer = Math.max(0, hedgehogLauncher.timeStopTimer - dt);
-    } else if (isResuming) {
-      resumeCountdown = Math.max(0, resumeCountdown - dt);
     } else {
       inGameElapsedTime += dt;
     }
     const elapsed = inGameElapsedTime;
-    const isInputLocked = isFrozen || isResuming;
 
     if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
