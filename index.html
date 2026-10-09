@@ -1823,6 +1823,7 @@ window.addEventListener("keyup", e => {
 let lastTime = performance.now();
 
 function drawDeepSpaceBackground(c, curTime) {
+  // 깊은 우주 베이스
   const bgGrad = c.createLinearGradient(0, 0, 0, LOGICAL_HEIGHT);
   bgGrad.addColorStop(0, "#03020c");
   bgGrad.addColorStop(0.5, "#060718");
@@ -1830,24 +1831,24 @@ function drawDeepSpaceBackground(c, curTime) {
   c.fillStyle = bgGrad;
   c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
-  // 2. 배경 성운 1: 크기와 위치가 천천히 회전/이동 (주기: ~20초)
-  const neb1X = 100 + Math.sin(curTime * 0.3) * 50;
-  const neb1Y = 220 + Math.cos(curTime * 0.25) * 60;
-  const neb1R = 250 + Math.sin(curTime * 0.4) * 40;
-  const neb1 = c.createRadialGradient(neb1X, neb1Y, 20, neb1X, neb1Y, neb1R);
-  neb1.addColorStop(0, "rgba(80, 20, 140, 0.24)");
-  neb1.addColorStop(0.6, "rgba(0, 150, 255, 0.08)");
+  // 1. 왼쪽 위 은은한 성운: 중심 위치(X: 50~130, Y: 140~240)와 반경(180~270)이 천천히 변화
+  const neb1X = 90 + Math.sin(curTime * 0.25) * 45;
+  const neb1Y = 190 + Math.cos(curTime * 0.20) * 50;
+  const neb1R = 225 + Math.sin(curTime * 0.30) * 45;
+  const neb1 = c.createRadialGradient(neb1X, neb1Y, 15, neb1X, neb1Y, neb1R);
+  neb1.addColorStop(0, "rgba(180, 210, 255, 0.16)");
+  neb1.addColorStop(0.45, "rgba(90, 40, 160, 0.10)");
   neb1.addColorStop(1, "rgba(0, 0, 0, 0)");
   c.fillStyle = neb1;
   c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
-  // 2. 배경 성운 2: 하단에서 천천히 크기와 위치 변화 (주기: ~25초)
-  const neb2X = 350 + Math.cos(curTime * 0.22) * 60;
-  const neb2Y = 580 + Math.sin(curTime * 0.28) * 50;
-  const neb2R = 260 + Math.cos(curTime * 0.35) * 40;
-  const neb2 = c.createRadialGradient(neb2X, neb2Y, 30, neb2X, neb2Y, neb2R);
-  neb2.addColorStop(0, "rgba(0, 220, 255, 0.16)");
-  neb2.addColorStop(0.7, "rgba(220, 0, 120, 0.06)");
+  // 2. 오른쪽 아래 은은한 성운: 중심 위치(X: 310~390, Y: 590~690)와 반경(200~290)이 천천히 변화
+  const neb2X = 350 + Math.cos(curTime * 0.22) * 40;
+  const neb2Y = 640 + Math.sin(curTime * 0.26) * 50;
+  const neb2R = 245 + Math.cos(curTime * 0.28) * 45;
+  const neb2 = c.createRadialGradient(neb2X, neb2Y, 20, neb2X, neb2Y, neb2R);
+  neb2.addColorStop(0, "rgba(200, 230, 255, 0.14)");
+  neb2.addColorStop(0.5, "rgba(0, 180, 230, 0.08)");
   neb2.addColorStop(1, "rgba(0, 0, 0, 0)");
   c.fillStyle = neb2;
   c.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
@@ -2398,7 +2399,7 @@ function safeGameLoop(now) {
     ctx.save();
     if (gPct >= 0.8) {
       ctx.shadowColor = "#ffe600";
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 4;
     }
     ctx.fillStyle = "#1e2438";
     drawRoundRect(ctx, gx, gy, gw, gh, 4);
@@ -2407,6 +2408,7 @@ function safeGameLoop(now) {
     ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
     drawRoundRect(ctx, gx, gy, gw * gPct, gh, 4);
     ctx.fill();
+    ctx.shadowBlur = 0; // 전역 네온 블러 누출 차단
     ctx.restore();
 
     ctx.textAlign = "left";
