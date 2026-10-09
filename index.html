@@ -901,8 +901,10 @@ class BlackHole {
         if (e.hasShield) continue;
         e.hp = 0;
         enemiesList.splice(ei, 1);
-        score += 1; // 4. 적 파괴 시 1점 획득
-        skillGauge += CONFIG.BASE_GAUGE_PER_KILL;
+        score += 1;
+        // [수정] 보호막 활성화 시 30%로 충전 속도 축소
+        const bGauge = (player && player.shieldRemain > 0) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
+        skillGauge += bGauge;
         explosions.push(new ExplosionFX(e.x, e.y, "#969696"));
       }
     }
@@ -1003,8 +1005,10 @@ class LightningBolt {
         if (e.hasShield) continue;
         e.hp = 0;
         enemiesList.splice(ei, 1);
-        score += 1; // 4. 적 파괴 시 1점 획득
-        skillGauge += CONFIG.BASE_GAUGE_PER_KILL;
+        score += 1;
+        // [수정] 보호막 활성화 시 30%로 충전 속도 축소
+        const lGauge = (player && player.shieldRemain > 0) ? (CONFIG.BASE_GAUGE_PER_KILL * 0.3) : CONFIG.BASE_GAUGE_PER_KILL;
+        skillGauge += lGauge;
         explosions.push(new ExplosionFX(e.x, e.y, "#00f5ff"));
       }
     }
@@ -1690,8 +1694,10 @@ function applyChosenSkill(code, customDuration=null) {
     player.laserWeaponTimer = customDuration || 30.0;
     player.lastLaserTime = performance.now() / 1000;
   }
-  else if (code === "SHIELD") {
-    player.shieldRemain = customDuration || 30.0;
+   else if (code === "SHIELD") {
+    // [수정] 룰렛 결과 시간을 더하되 최대 30초를 초과하지 못하도록 캡(Cap) 제한
+    const addedDuration = customDuration || 30.0;
+    player.shieldRemain = Math.min(30.0, player.shieldRemain + addedDuration);
   }
 }
 
@@ -2257,17 +2263,18 @@ function safeGameLoop(now) {
             playTone(820, 0.05, "triangle");
             break;
           }
-          e.hp -= b.dmg;
-          bullets.splice(bi, 1);
-          if (e.hp <= 0) {
-            enemies.splice(ei, 1);
-            // 보호막 지속 중에는 게이지 충전 속도를 30%로 제한 (무한 순환 방지)
-            const effectiveGauge = (player && player.shieldRemain > 0) ? (gaugePerKill * 0.3) : gaugePerKill;
-            skillGauge += effectiveGauge;
-            explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
-            playExplosionSound();
-            break;
-          }
+      e.hp -= b.dmg;
+      bullets.splice(bi, 1);
+      if (e.hp <= 0) {
+        enemies.splice(ei, 1);
+        score += 1; // [수정] 일반 탄환으로 적 처치 시 1점 정상 획득
+        // 보호막 지속 중에는 게이지 충전 속도를 30%로 제한
+        const effectiveGauge = (player && player.shieldRemain > 0) ? (gaugePerKill * 0.3) : gaugePerKill;
+        skillGauge += effectiveGauge;
+        explosions.push(new ExplosionFX(e.x, e.y, "#ffe600"));
+        playExplosionSound();
+        break;
+      }
         }
       }
 
