@@ -2356,7 +2356,7 @@ function safeGameLoop(now) {
 
     if (gaugeBoostTimer > 0) gaugeBoostTimer = Math.max(0, gaugeBoostTimer - dt);
 
-    if (player && player.isAlive && !isInputLocked) {
+    if (player && player.isAlive && !isFrozen) {
       let kx = 0, ky = 0;
       if (keysPressed["arrowleft"] || keysPressed["a"] || keysPressed["keya"]) kx -= 1;
       if (keysPressed["arrowright"] || keysPressed["d"] || keysPressed["keyd"]) kx += 1;
@@ -2370,12 +2370,12 @@ function safeGameLoop(now) {
       }
     }
 
-    if (!isNukingTransition && !isInputLocked && player) {
+    if (!isNukingTransition && !isFrozen && player) {
       player.update(dt, enemies, lightningBolts, bullets);
       player.shoot(curTime, bullets);
     }
 
-    if (meteorManager && player && !isInputLocked) {
+    if (meteorManager && player && !isFrozen) {
       meteorManager.update(dt, elapsed, player, bullets);
     }
 
@@ -2765,18 +2765,6 @@ function safeGameLoop(now) {
     ctx.fillStyle = gaugeBoostTimer > 0 ? "#ffe600" : "#00f5ff";
     ctx.font = `bold 12px ${FONT_FAMILY}`;
     ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
-
-    // 복귀 시 깜짝 시작 방지 HUD
-    if (resumeCountdown > 0) {
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#00f5ff";
-      ctx.font = `bold 24px ${FONT_FAMILY}`;
-      ctx.shadowColor = "#00f5ff";
-      ctx.shadowBlur = 8;
-      ctx.fillText(`GET READY! ${resumeCountdown.toFixed(1)}s`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT * 0.45);
-      ctx.restore();
-    }
 
   } else if (gameState === 2) { // 3. 업그레이드 슬롯 선택
     ctx.textAlign = "center";
