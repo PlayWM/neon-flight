@@ -882,7 +882,6 @@ class Player {
     return "RATE";
   }
   getRealSpeed() {
-  getRealSpeed() {
     // 1. 레전드 기체: 기존 고유 속도 그대로 유지
     if (this.name === "Legend") {
       return CONFIG.BASE_PLAYER_SPEED + (this.speedStat * CONFIG.STAT_SPEED_FACTOR);
