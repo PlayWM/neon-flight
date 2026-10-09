@@ -1859,6 +1859,10 @@ function triggerSlotSequence() {
   hedgehogLauncher.flashAlpha = 1.0;
   hedgehogLauncher.timeStopTimer = 2.0; // 정확히 2.0초 정지 유지
 
+  // 화면에 남아있는 아군 총알 및 적 미사일 즉시 전량 제거
+  bullets = [];
+  bossMissiles = [];
+
   playTone(800, 0.35, "sawtooth", -300, 0.3);
 
   const validTargets = enemies.filter(e => !e.isDead && e.hp > 0).sort((a, b) => b.y - a.y);
@@ -2771,15 +2775,20 @@ function safeGameLoop(now) {
     ctx.font = `bold 12px ${FONT_FAMILY}`;
     ctx.fillText(gaugeBoostTimer > 0 ? "SKILL GAUGE [2X]" : "SKILL GAUGE", gx, gy - 6);
 
-  } else if (gameState === 2) { // 3. 업그레이드 슬롯 선택
+} else if (gameState === 2) { // 3. 업그레이드 슬롯 선택
     ctx.textAlign = "center";
     ctx.fillStyle = "#00f5ff";
     ctx.font = `bold 22px ${FONT_FAMILY}`;
-    ctx.fillText("CHOOSE YOUR UPGRADE", LOGICAL_WIDTH / 2, 45);
+    ctx.fillText("UPGRADE SELECTION", LOGICAL_WIDTH / 2, 42);
 
-    ctx.fillStyle = "#ffe600";
-    ctx.font = `13px ${FONT_FAMILY}`;
-    ctx.fillText("SELECT AN OPTION OR CHANCE MULTIPLIER", LOGICAL_WIDTH / 2, 68);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold 12px ${FONT_FAMILY}`;
+    ctx.fillText("▲ [위] 원하는 능력 확정 선택   vs   ▼ [아래] 랜덤 배율 도전", LOGICAL_WIDTH / 2, 65);
+
+    // 상단 확정 영역 가이드 태그
+    ctx.fillStyle = "#a0b0c8";
+    ctx.font = `11px ${FONT_FAMILY}`;
+    ctx.fillText("――― [ 확정 선택: 원하는 능력을 100% 즉시 획득 ] ―――", LOGICAL_WIDTH / 2, 85);
 
     const cards = [
       { code: "POWER_UP", title: "POWER UP", desc: `Current Lv.${player ? Math.round(player.powerStat) : 1}`, col: "#00f5ff", subCol: "#ff0080", x: 35, y: 95, w: 175, h: 80 },
@@ -2847,15 +2856,15 @@ function safeGameLoop(now) {
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffd700";
     ctx.font = `bold 12px ${FONT_FAMILY}`;
-    ctx.fillText("CHANCE: x1(50%), x2(30%), x3(20%) MULTIPLIER", btnMult.x + btnMult.w / 2, btnMult.y + 24);
+    ctx.fillText("★ [랜덤 선택: 최대 3배 대박 찬스 (확률 뽑기)] ★", btnMult.x + btnMult.w / 2, btnMult.y + 24);
 
     ctx.fillStyle = currentMultOption.col;
-    ctx.font = `bold 26px ${FONT_FAMILY}`;
-    ctx.fillText(currentMultOption.label, btnMult.x + btnMult.w / 2, btnMult.y + 58);
+    ctx.font = `bold 24px ${FONT_FAMILY}`;
+    ctx.fillText(currentMultOption.label, btnMult.x + btnMult.w / 2, btnMult.y + 56);
 
-    ctx.fillStyle = "#a0b0c8";
+    ctx.fillStyle = "#a5c0e0";
     ctx.font = `11px ${FONT_FAMILY}`;
-    ctx.fillText("TAP OR CLICK TO GRAB THIS BONUS!", btnMult.x + btnMult.w / 2, btnMult.y + 82);
+    ctx.fillText("x1(50%) | x2(30%) | x3(20%) 중 실시간 추첨", btnMult.x + btnMult.w / 2, btnMult.y + 80);
     ctx.restore();
 
     if (randomPickShowcaseActive) {
