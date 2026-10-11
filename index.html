@@ -1057,7 +1057,7 @@ class Player {
     return Math.max(0.10, base * reduction);
   }
   getMissileDamage() {
-    const baseDmg = 1.5;
+    const baseDmg = 3.0;
     return baseDmg * Math.pow(1.08, Math.max(0, this.missileStat - 1));
   }
   getMissileInterval() {
@@ -1179,7 +1179,8 @@ shoot(curTime, bullets) {
       this.shotCount++;
       let baseDmg = Math.max(1, this.powerStat || 1);
       if (this.pType === 1) baseDmg = 1 + (this.powerStat - 1) * 2.2;
-      const dmgMultiplier = (this.pType === 4 || this.name === "Legend") ? 0.84 : 1.2;
+      // 레전드 기체(0.84)는 유지하고, 일반 기체 배율만 1.2 -> 2.4로 증가
+      const dmgMultiplier = (this.pType === 4 || this.name === "Legend") ? 0.84 : 2.0;
       const dmg = baseDmg * dmgMultiplier;
       this._fire(this.x, this.y, dmg, bullets);
       if (this.clonePlaneTimer > 0) this._fire(this.x + 42, this.y, dmg, bullets);
