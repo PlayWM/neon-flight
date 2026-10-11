@@ -1112,7 +1112,9 @@ class Player {
 
     if (this.pType === 0) {
       this.missileLaserTimer += dt;
-      if (this.missileLaserTimer >= 0.5) {
+      // Rate 레벨 1당 0.5초 기본 주기에서 2%씩 단축 (최소 0.08초 가드)
+      const laserInterval = Math.max(0.08, 0.5 * Math.pow(0.98, Math.max(0, this.fireRateStat - 1)));
+      if (this.missileLaserTimer >= laserInterval) {
         this.missileLaserTimer = 0;
         const lDmg = Math.max(1.0, this.getMissileDamage() * 0.5);
         stationaryLasers.push(new StationaryMissileLaser(this.x, this.y - 20, lDmg, this.missileStat));
