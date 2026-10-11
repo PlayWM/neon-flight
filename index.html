@@ -1075,8 +1075,6 @@ class Player {
     }
     return Math.max(0.05, interval);
   }
-    return Math.max(0.1, interval);
-  }
   update(dt, enemiesList, bulletsList) {
     if (!this.isAlive) return;
     if (this.clonePlaneTimer > 0) this.clonePlaneTimer = Math.max(0, this.clonePlaneTimer - dt);
