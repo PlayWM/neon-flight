@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261011.012";
+const VERSION_STR = "v20261011.015";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1036,6 +1036,7 @@ class Player {
     this.missileFlashTime = 0.0;
     this.missileLaserTimer = 0.0;
     this.isMovingUp = false;
+    this.lightningTimer = 0.0;
   }
   getDominantTrait() {
     if (this.pType === 0) return "MISSILE";
@@ -1123,6 +1124,19 @@ class Player {
           stationaryLasers.push(new StationaryMissileLaser(this.x + 42, this.y - 20, lDmg, this.missileStat));
         }
         playTone(740, 0.15, "triangle", -200, 0.1);
+      }
+    }
+
+    if ((this.pType === 2 || this.getDominantTrait() === "RATE") && this.fireRateStat >= 8) {
+      this.lightningTimer += dt;
+      if (this.lightningTimer >= 3.0) {
+        this.lightningTimer = 0;
+        const mult = (this.fireRateStat >= 16) ? 5.0 : 3.0;
+        const lRadius = this.radius * mult;
+        const lx = this.x + (Math.random() - 0.5) * 160;
+        const ly = this.y - 146 - Math.random() * 125;
+        lightningBolts.push(new LightningBolt(lx, ly, lRadius));
+        playTone(850, 0.18, "sawtooth", -400, 0.25);
       }
     }
 
@@ -2138,6 +2152,72 @@ class ExplosionFX {
   }
 }
 
+// [추가] 트윈 비행기 전용 번개 구체 클래스
+class LightningBolt {
+  constructor(x, y, radius) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.life = 1.8;
+    this.totalLife = 1.8;
+  }
+  update(dt, enemiesList) {
+    this.life -= dt;
+    // 보스 및 혜성을 제외한 닿는 모든 적(일반, 보호막, 단단한 암석) 일격 파괴
+    for (let ei = enemiesList.length - 1; ei >= 0; ei--) {
+      const e = enemiesList[ei];
+      if (e.isDead || e.hp <= 0) continue;
+      const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
+      const hitR = this.radius + e.radius;
+      if (dSq <= hitR * hitR) {
+        e.hasShield = false;
+        safeKillEnemy(e, "#00f5ff");
+        playExplosionSound();
+      }
+    }
+  }
+  draw() {
+    if (this.life <= 0) return;
+    const alpha = Math.max(0, this.life / this.totalLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 1. 내부 플라즈마 오라 코어
+    const pGrad = ctx.createRadialGradient(this.x, this.y, 2, this.x, this.y, this.radius);
+    pGrad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+    pGrad.addColorStop(0.3, "rgba(0, 245, 255, 0.45)");
+    pGrad.addColorStop(0.7, "rgba(0, 150, 255, 0.22)");
+    pGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = pGrad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. 외곽 네온 충격파 링
+    ctx.strokeStyle = "#00f5ff";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 3. 지그재그 전격 아크 (6갈래)
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.8;
+    for (let k = 0; k < 6; k++) {
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      let cx = this.x, cy = this.y;
+      for (let s = 0; s < 5; s++) {
+        cx += (Math.random() - 0.5) * (this.radius * 0.8);
+        cy += (Math.random() - 0.5) * (this.radius * 0.8);
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 let playerDeathCinematic = {
   active: false,
   timer: 0.0,
@@ -3060,6 +3140,7 @@ let suckingEntities = [];
 let enemies = [];
 let bossMissiles = [];
 let bossDropItems = [];
+let lightningBolts = []; // 추가
 let blackHoles = [];
 let currentBoss = null;
 let explosions = [];
@@ -3113,6 +3194,10 @@ function safeGameLoop(now) {
     for (let i = blackHoles.length - 1; i >= 0; i--) {
       blackHoles[i].update(dt, enemies);
       if (blackHoles[i].life <= 0) blackHoles.splice(i, 1);
+    }
+    for (let i = lightningBolts.length - 1; i >= 0; i--) {
+      lightningBolts[i].update(dt, enemies);
+      if (lightningBolts[i].life <= 0) lightningBolts.splice(i, 1);
     }
 
     if (gameState === 0) {
@@ -3586,6 +3671,7 @@ function safeGameLoop(now) {
         if (!e.isBeingSucked) e.draw(curTime);
       }
       for (let i = 0; i < blackHoles.length; i++) blackHoles[i].draw();
+      for (let i = 0; i < lightningBolts.length; i++) lightningBolts[i].draw();
       if (currentBoss) currentBoss.draw(curTime);
       if (meteorManager) {
         meteorManager.drawMeteors();
