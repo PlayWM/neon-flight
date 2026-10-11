@@ -1378,10 +1378,10 @@ class MissileShadow {
   draw() {
     ctx.save();
     if (this.isType0) {
-      // 사이안 회전 쐐기형 마이크로 미사일
+      // 본체 레이저(사이안)와 확실히 대비되는 네온 마젠타 / 바이올렛 쐐기형 탄두
       ctx.translate(this.x, this.y);
       ctx.rotate(Math.atan2(this.vy, this.vx) + Math.PI / 2);
-      ctx.fillStyle = "#00f5ff";
+      ctx.fillStyle = "#e000ff";
       ctx.beginPath();
       ctx.moveTo(0, -9);
       ctx.lineTo(4, 5);
@@ -1390,7 +1390,8 @@ class MissileShadow {
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = "#ffffff";
+      // 탄두 내부 고출력 에너지 코어 (일렉트릭 옐로우)
+      ctx.fillStyle = "#ffe600";
       ctx.beginPath();
       ctx.arc(0, -2, 1.8, 0, Math.PI * 2);
       ctx.fill();
