@@ -1364,6 +1364,9 @@ class HomingMissile {
 
       this.vx = Math.cos(newAngle) * this.currentSpeed;
       this.vy = Math.sin(newAngle) * this.currentSpeed;
+    } else {
+      // 적이 없으면 기존 각도를 유지하며 위쪽/바깥쪽으로 직진 이탈
+      if (this.vy > -5.0) this.vy -= 10.0 * dt;
     }
 
     this.x += this.vx * (dt * 60);
@@ -3586,6 +3589,12 @@ function safeGameLoop(now) {
 
       for (let mi = homingMissiles.length - 1; mi >= 0; mi--) {
         const m = homingMissiles[mi];
+        // 미사일이 화면 위/아래/양옆 유효 화면 영역 밖으로 나갔으면 충돌 판정 없이 즉시 삭제
+        if (m.y <= -20 || m.y >= LOGICAL_HEIGHT + 30 || m.x <= -30 || m.x >= LOGICAL_WIDTH + 30) {
+          homingMissiles.splice(mi, 1);
+          continue;
+        }
+
         for (let ei = enemies.length - 1; ei >= 0; ei--) {
           const e = enemies[ei];
           if (e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
