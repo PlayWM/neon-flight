@@ -1281,9 +1281,11 @@ shoot(curTime, bullets) {
 class MissileShadow {
   constructor(x, y, radius, isType0=false) {
     this.x = x; this.y = y;
-    this.radius = radius * 0.5;
+    // 특수 미사일(isType0) 잔상 크기를 기존 대비 70%로 축소 (radius * 0.5 * 0.7)
+    this.radius = isType0 ? (radius * 0.35) : (radius * 0.5);
     this.isType0 = isType0;
-    this.life = isType0 ? 0.35 : 0.45;
+    // 꼬리가 길게 늘어지지 않도록 수명을 대폭 단축하여 빠르게 생성되고 소멸 (0.35 -> 0.14)
+    this.life = isType0 ? 0.14 : 0.45;
     this.totalLife = this.life;
   }
   update(dt) { this.life -= dt; }
@@ -1294,16 +1296,16 @@ class MissileShadow {
     ctx.save();
     ctx.globalAlpha = alpha;
     if (this.isType0) {
-      ctx.fillStyle = (Math.random() < 0.4) ? "#ffffff" : "#00f5ff";
-      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * 1.1, 0, Math.PI * 2); ctx.fill();
+      // 사이안 탄두 본체와 명확히 구분되는 네온 오렌지/고열 앰버 배기 불꽃 색상 적용
+      ctx.fillStyle = (Math.random() < 0.4) ? "#ffffff" : "#ff7700";
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
     } else {
       ctx.fillStyle = "#ff55bb";
       ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
-}
-class HomingMissile {
+}class HomingMissile {
   constructor(x, y, vx, vy, dmg, side="LEFT", isType0=false) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
     this.dmg = dmg;
