@@ -1327,12 +1327,13 @@ class HomingMissile {
 
     const maxYBound = this.isType0 ? (LOGICAL_HEIGHT + 20) : (LOGICAL_HEIGHT * 0.90);
 
-    if (!this.target || this.target.hp <= 0 || this.target.isDead || (!this.isType0 && this.target.y > maxYBound)) {
+    // 타깃 유효성 정밀 검증: 배열에 없거나 이미 죽었거나 흡수 중이면 즉시 타깃 해제
+    if (!this.target || this.target.hp <= 0 || this.target.isDead || this.target.isBeingSucked || !enemiesList.includes(this.target) || (!this.isType0 && this.target.y > maxYBound)) {
       let minDistSq = Infinity;
       this.target = null;
       for (let i = 0; i < enemiesList.length; i++) {
         const e = enemiesList[i];
-        if (e.hp <= 0 || e.isDead || e.isHeavy || e.hasShield || e.y < 20 || e.y > maxYBound) continue;
+        if (!e || e.hp <= 0 || e.isDead || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > maxYBound) continue;
         if (!this.isType0 && player) {
           if (this.side === "LEFT" && e.x > player.x) continue;
           if (this.side === "RIGHT" && e.x < player.x) continue;
@@ -3589,7 +3590,6 @@ function safeGameLoop(now) {
 
       for (let mi = homingMissiles.length - 1; mi >= 0; mi--) {
         const m = homingMissiles[mi];
-        // 미사일이 화면 위/아래/양옆 유효 화면 영역 밖으로 나갔으면 충돌 판정 없이 즉시 삭제
         if (m.y <= -20 || m.y >= LOGICAL_HEIGHT + 30 || m.x <= -30 || m.x >= LOGICAL_WIDTH + 30) {
           homingMissiles.splice(mi, 1);
           continue;
@@ -3597,26 +3597,35 @@ function safeGameLoop(now) {
 
         for (let ei = enemies.length - 1; ei >= 0; ei--) {
           const e = enemies[ei];
-          if (e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
-          const dSq = (m.x - e.x) * (m.x - e.x) + (m.y - e.y) * (e.y - e.y);
+          if (!e || e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
+          const dSq = (m.x - e.x) * (m.x - e.x) + (m.y - e.y) * (m.y - e.y);
           const rSum = m.radius + e.radius;
-          if (dSq < rSum * rSum) {
-            homingMissiles.splice(mi, 1);
-            applyDamageToEnemy(e, m.dmg, "MISSILE_NEEDLE");
+          if (dSq <= rSum * rSum) {
+            const hitX = m.x;
+            const hitY = m.y;
+            const isType0Missile = m.isType0;
+            const missileDamage = m.dmg;
 
-            // 미사일형 기체 전용: 반경 45px 내 주변 적 45% 광역 스플래시 피해
-            if (m.isType0) {
+            homingMissiles.splice(mi, 1);
+            applyDamageToEnemy(e, missileDamage, "MISSILE_NEEDLE");
+
+            // 스플래시 타깃을 임시 배열로 먼저 확보한 뒤 데미지를 적용하여 배열 순회 중 인덱스 충돌 차단
+            if (isType0Missile) {
               const splashR = 45;
-              const splashDmg = m.dmg * 0.45;
-              explosions.push(new ExplosionFX(m.x, m.y, "#00f5ff"));
-              for (let si = enemies.length - 1; si >= 0; si--) {
+              const splashDmg = missileDamage * 0.45;
+              explosions.push(new ExplosionFX(hitX, hitY, "#00f5ff"));
+              const splashTargets = [];
+              for (let si = 0; si < enemies.length; si++) {
                 const subE = enemies[si];
-                if (subE !== e && !subE.isDead && subE.hp > 0 && !subE.isBeingSucked) {
-                  const sDistSq = (subE.x - m.x) * (subE.x - m.x) + (subE.y - m.y) * (subE.y - m.y);
+                if (subE && subE !== e && !subE.isDead && subE.hp > 0 && !subE.isBeingSucked) {
+                  const sDistSq = (subE.x - hitX) * (subE.x - hitX) + (subE.y - hitY) * (subE.y - hitY);
                   if (sDistSq <= (splashR + subE.radius) * (splashR + subE.radius)) {
-                    applyDamageToEnemy(subE, splashDmg, "MISSILE_NEEDLE");
+                    splashTargets.push(subE);
                   }
                 }
+              }
+              for (let ti = 0; ti < splashTargets.length; ti++) {
+                applyDamageToEnemy(splashTargets[ti], splashDmg, "MISSILE_NEEDLE");
               }
             }
             break;
