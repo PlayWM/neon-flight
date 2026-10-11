@@ -3631,6 +3631,7 @@ function safeGameLoop(now) {
         for (let ei = enemies.length - 1; ei >= 0; ei--) {
           const e = enemies[ei];
           if (!e || e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
+          // Y축 거리 오타 정상 수정: (m.y - e.y) * (m.y - e.y)
           const dSq = (m.x - e.x) * (m.x - e.x) + (m.y - e.y) * (m.y - e.y);
           const rSum = m.radius + e.radius;
           if (dSq < rSum * rSum) {
@@ -3715,30 +3716,6 @@ function safeGameLoop(now) {
               }
               bullets.splice(bi, 1);
               applyDamageToEnemy(e, b.dmg, b.bulletType);
-              break;
-            }
-          }
-        }
-      }
-          const shieldDist = player.radius + 32;
-          const edx = e.x - player.x;
-          const edy = e.y - player.y;
-          const curDistSq = edx * edx + edy * edy;
-          const minDist = shieldDist + e.radius;
-          if (curDistSq < minDist * minDist) {
-            const pushAngle = Math.atan2(edy, edx);
-            e.x = Math.max(e.radius, Math.min(LOGICAL_WIDTH - e.radius, player.x + Math.cos(pushAngle) * minDist));
-            e.y = player.y + Math.sin(pushAngle) * minDist;
-            e.vx = Math.cos(pushAngle) * 5.0;
-          }
-        }
-
-        if (!isFrozen && player && player.isAlive && e.y >= 20 && !e.isDead && e.hp > 0 && !e.isBeingSucked) {
-          const dSq = (player.x - e.x) * (player.x - e.x) + (player.y - e.y) * (player.y - e.y);
-          const rSum = player.radius + e.radius;
-          if (dSq < rSum * rSum) {
-            if (player.shieldRemain <= 0) {
-              triggerPlayerCinematicDeath(e.x, e.y);
               break;
             }
           }
