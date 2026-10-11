@@ -1335,21 +1335,47 @@ class HomingMissile {
 
     // 타깃 유효성 정밀 검증: 배열에 없거나 이미 죽었거나 흡수 중이면 즉시 타깃 해제
     if (!this.target || this.target.hp <= 0 || this.target.isDead || this.target.isBeingSucked || !enemiesList.includes(this.target) || (!this.isType0 && this.target.y > maxYBound)) {
-      let minDistSq = Infinity;
       this.target = null;
+      let primaryTarget = null;
+      let minPrimaryDistSq = Infinity;
+      let fallbackTarget = null;
+      let minFallbackDistSq = Infinity;
+
       for (let i = 0; i < enemiesList.length; i++) {
         const e = enemiesList[i];
         if (!e || e.hp <= 0 || e.isDead || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > maxYBound) continue;
-        if (!this.isType0 && player) {
+
+        const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
+
+        // 전체 대상 중 가장 가까운 적(적이 1개일 때를 대비한 폴백)
+        if (dSq < minFallbackDistSq) {
+          minFallbackDistSq = dSq;
+          fallbackTarget = e;
+        }
+
+        // 미사일형(Type 0) 특수 미사일: 각자 발사된 측면(LEFT/RIGHT)의 적을 우선 타겟팅
+        if (this.isType0 && player) {
+          const isLeftCandidate = (e.x <= player.x);
+          const isRightCandidate = (e.x >= player.x);
+          if ((this.side === "LEFT" && isLeftCandidate) || (this.side === "RIGHT" && isRightCandidate)) {
+            if (dSq < minPrimaryDistSq) {
+              minPrimaryDistSq = dSq;
+              primaryTarget = e;
+            }
+          }
+        } else if (!this.isType0 && player) {
+          // 일반 미사일 기존 분기 유지
           if (this.side === "LEFT" && e.x > player.x) continue;
           if (this.side === "RIGHT" && e.x < player.x) continue;
-        }
-        const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
-        if (dSq < minDistSq) {
-          minDistSq = dSq;
-          this.target = e;
+          if (dSq < minPrimaryDistSq) {
+            minPrimaryDistSq = dSq;
+            primaryTarget = e;
+          }
         }
       }
+
+      // 담당 방향에 적이 있으면 그 적을 개별 조준하고, 적이 1개이거나 한쪽에만 몰려있으면 가장 가까운 적 조준
+      this.target = primaryTarget || fallbackTarget;
     }
 
     if (this.target) {
@@ -3607,7 +3633,7 @@ function safeGameLoop(now) {
           if (!e || e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
           const dSq = (m.x - e.x) * (m.x - e.x) + (m.y - e.y) * (m.y - e.y);
           const rSum = m.radius + e.radius;
-          if (dSq <= rSum * rSum) {
+          if (dSq < rSum * rSum) {
             const hitX = m.x;
             const hitY = m.y;
             const isType0Missile = m.isType0;
@@ -3640,16 +3666,46 @@ function safeGameLoop(now) {
         }
       }
 
+      // 1. 적 업데이트 및 플레이어 충돌 판정
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
         if (!isFrozen) e.update(dt, elapsed, speedScale, widthScale);
         if (e.y > LOGICAL_HEIGHT + 40) { enemies.splice(ei, 1); continue; }
 
-        if (!isFrozen && e.y >= 20 && !e.isDead && e.hp > 0 && !e.isBeingSucked) {
-          for (let bi = bullets.length - 1; bi >= 0; bi--) {
-            const b = bullets[bi];
+        if (player && player.isAlive && player.shieldRemain > 0 && e.y >= 20 && !e.isDead && !e.isBeingSucked) {
+          const shieldDist = player.radius + 32;
+          const edx = e.x - player.x;
+          const edy = e.y - player.y;
+          const curDistSq = edx * edx + edy * edy;
+          const minDist = shieldDist + e.radius;
+          if (curDistSq < minDist * minDist) {
+            const pushAngle = Math.atan2(edy, edx);
+            e.x = Math.max(e.radius, Math.min(LOGICAL_WIDTH - e.radius, player.x + Math.cos(pushAngle) * minDist));
+            e.y = player.y + Math.sin(pushAngle) * minDist;
+            e.vx = Math.cos(pushAngle) * 5.0;
+          }
+        }
+
+        if (!isFrozen && player && player.isAlive && e.y >= 20 && !e.isDead && e.hp > 0 && !e.isBeingSucked) {
+          const dSq = (player.x - e.x) * (player.x - e.x) + (player.y - e.y) * (player.y - e.y);
+          const rSum = player.radius + e.radius;
+          if (dSq < rSum * rSum) {
+            if (player.shieldRemain <= 0) {
+              triggerPlayerCinematicDeath(e.x, e.y);
+              break;
+            }
+          }
+        }
+      }
+
+      // 2. 탄환-적 충돌 판정 (탄환 기준 역순 순회하여 enemies splice로 인한 건너뜀 완전 차단)
+      if (!isFrozen) {
+        for (let bi = bullets.length - 1; bi >= 0; bi--) {
+          const b = bullets[bi];
+          for (let ei = enemies.length - 1; ei >= 0; ei--) {
+            const e = enemies[ei];
+            if (!e || e.y < 20 || e.isDead || e.hp <= 0 || e.isBeingSucked) continue;
             const rSum = b.radius + e.radius;
-            // 1차 단순 거리 체크: 반경을 벗어나면 무거운 제곱 연산 즉시 건너뜀
             if (Math.abs(b.x - e.x) > rSum || Math.abs(b.y - e.y) > rSum) continue;
 
             const dSq = (b.x - e.x) * (b.x - e.x) + (b.y - e.y) * (b.y - e.y);
@@ -3663,8 +3719,7 @@ function safeGameLoop(now) {
             }
           }
         }
-
-        if (player && player.isAlive && player.shieldRemain > 0 && e.y >= 20 && !e.isDead && !e.isBeingSucked) {
+      }
           const shieldDist = player.radius + 32;
           const edx = e.x - player.x;
           const edy = e.y - player.y;
