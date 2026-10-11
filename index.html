@@ -1134,7 +1134,8 @@ class Player {
         const mult = (this.fireRateStat >= 16) ? 5.0 : 3.0;
         const lRadius = this.radius * mult;
         const lx = this.x + (Math.random() - 0.5) * 160;
-        const ly = this.y - 146 - Math.random() * 125;
+        // 기체와의 거리를 60% 증가 (146 -> 234, 범위 125 -> 200)
+        const ly = this.y - 234 - Math.random() * 200;
         lightningBolts.push(new LightningBolt(lx, ly, lRadius));
         playTone(850, 0.18, "sawtooth", -400, 0.25);
       }
@@ -2193,12 +2194,14 @@ class LightningBolt {
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. 외곽 네온 충격파 링
-    ctx.strokeStyle = "#00f5ff";
+    // 2. 외곽 네온 충격파 링 (30% 더 투명하게 rgba 0.7 적용)
+    ctx.strokeStyle = "rgba(0, 245, 255, 0.7)";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.stroke();
+
+    // 3. 지그재그 전격 아크 (6갈래)
 
     // 3. 지그재그 전격 아크 (6갈래)
     ctx.strokeStyle = "#ffffff";
