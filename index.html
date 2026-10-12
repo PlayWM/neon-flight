@@ -145,6 +145,47 @@ let userCountry = "Vietnam";
 let sessionSecurityKey = Math.random().toString(36).substring(2, 10);
 let sessionStartTime = performance.now();
 
+let activePlayerCount = 1;
+let isUpdatingPresence = false;
+const PRESENCE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/active_players";
+
+async function updatePresence() {
+  // 비행기 선택 화면(gameState === 0)이 아니거나 이전 요청이 진행 중이면 즉시 중단 (인게임 프레임 100% 보존)
+  if (gameState !== 0 || isUpdatingPresence) return;
+  isUpdatingPresence = true;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  try {
+    // 1. 본인 생존 신호 전송
+    await fetch(`${PRESENCE_URL}/${sessionSecurityKey}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastSeen: nowSec })
+    });
+
+    // 2. 선택 화면일 때만 실시간 플레이어 수 가져오기
+    if (gameState === 0) {
+      const res = await fetch(`${PRESENCE_URL}.json`);
+      const data = await res.json();
+      if (data) {
+        const validCount = Object.values(data).filter(v => v && v.lastSeen && (nowSec - v.lastSeen <= 12)).length;
+        activePlayerCount = Math.max(1, validCount);
+      }
+    }
+  } catch (e) {
+  } finally {
+    isUpdatingPresence = false;
+  }
+}
+
+setInterval(updatePresence, 5000);
+updatePresence();
+
+window.addEventListener("pagehide", () => {
+  navigator.sendBeacon(`${PRESENCE_URL}/${sessionSecurityKey}.json?x-http-method-override=DELETE`, "{}");
+});
+
 let top10List = [];
 function fetchTop10() {
   try {
@@ -3442,6 +3483,13 @@ function safeGameLoop(now) {
           ctx.fillText(`${shipLabel}${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
         }
       }
+
+      // 점수판 우측 하단 동시 접속자 수 표기 (폰트 크기: 이름과 동일한 12px)
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#00f5ff";
+      ctx.font = `bold 12px ${FONT_FAMILY}`;
+      ctx.fillText(`PLAYING NOW: ${activePlayerCount} PILOT${activePlayerCount > 1 ? "S" : ""}`, LOGICAL_WIDTH - 44, t10Y + 176);
+
       ctx.restore();
 
       ctx.textAlign = "left";
