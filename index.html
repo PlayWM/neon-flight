@@ -3484,11 +3484,11 @@ function safeGameLoop(now) {
         }
       }
 
-      // 점수판 우측 하단 동시 접속자 수 표기 (폰트 크기: 이름과 동일한 12px)
+      // 점수판 우측 하단 밖으로 위치 이동 (박스 밑면 690px 아래인 t10Y + 204에 렌더링)
       ctx.textAlign = "right";
       ctx.fillStyle = "#00f5ff";
       ctx.font = `bold 12px ${FONT_FAMILY}`;
-      ctx.fillText(`PLAYING NOW: ${activePlayerCount} PILOT${activePlayerCount > 1 ? "S" : ""}`, LOGICAL_WIDTH - 44, t10Y + 176);
+      ctx.fillText(`PLAYING NOW: ${activePlayerCount} PILOT${activePlayerCount > 1 ? "S" : ""}`, LOGICAL_WIDTH - 35, t10Y + 204);
 
       ctx.restore();
 
