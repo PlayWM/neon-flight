@@ -162,11 +162,14 @@ function fetchTop10() {
             else if (v.ship === "Twin" || v.pType === 2) shipName = "Twin";
             else if (v.ship === "Random") shipName = "Random";
 
+            const timeStr = (typeof v.playTime === "number") ? ` (${v.playTime}s)` : "";
+            const shipLabel = shipName ? `[${shipName}]${timeStr}` : "";
+
             return {
               name: sanitizeText(v.name),
               score: Math.floor(Number(v.score) || 0),
               country: sanitizeText(v.country) || "Global",
-              ship: shipName ? `[${shipName}]` : ""
+              ship: shipLabel
             };
           });
         }
@@ -174,6 +177,8 @@ function fetchTop10() {
   } catch(e){}
 }
 fetchTop10();
+
+let finalSurvivedSec = 0;
 
 function uploadScore(name, finalScore) {
   const cleanName = sanitizeText(name);
@@ -190,6 +195,8 @@ function uploadScore(name, finalScore) {
     else shipType = "Random";
   }
 
+  const survivedSec = finalSurvivedSec || Math.floor(inGameElapsedTime || 0);
+
   try {
     fetch(FIREBASE_URL, {
       method: "POST",
@@ -199,6 +206,7 @@ function uploadScore(name, finalScore) {
         score: Math.floor(finalScore),
         country: sanitizeText(userCountry),
         ship: shipType,
+        playTime: survivedSec,
         token: sessionSecurityKey,
         time: Date.now() / 1000
       })
@@ -2310,8 +2318,8 @@ let playerDeathCinematic = {
 
 function triggerPlayerCinematicDeath(hitSourceX, hitSourceY) {
   if (playerDeathCinematic.active || !player) return;
-  player.isAlive = false;
-  playerDeathCinematic.active = true;
+  finalSurvivedSec = Math.floor(inGameElapsedTime || 0);
+  player.isAlive = false;  playerDeathCinematic.active = true;
   playerDeathCinematic.timer = 0.0;
 
   const pCol = player.pType === 4 ? "#ffd700" : (player.pType === 1 ? "#ff2244" : (player.pType === 2 ? "#00ff66" : "#00f5ff"));
@@ -2860,6 +2868,7 @@ function initBattleState() {
 
   window.heavyDelayedSpawnTimer = false;
   playerDeathCinematic.active = false;
+  finalSurvivedSec = 0; // 새 게임 시작 시 이전 판 기록 리셋
   score = 0; skillGauge = 0.0;
   inGameElapsedTime = 0;
   lastSpawnTime = 0;
@@ -3421,12 +3430,16 @@ function safeGameLoop(now) {
         for (let idx = 0; idx < showLen; idx++) {
           const item = top10List[idx];
           const rowY = Math.round(t10Y + 34 + idx * 15);
+          
+          // 1. 순위 및 유저 이름 (최대 너비 보장)
           ctx.textAlign = "left";
           ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
           ctx.fillText(`${idx + 1}. [${item.country}] ${item.name}`, 44, rowY);
+          
+          // 2. 비행기 정보 및 점수 (우측 정렬)
           ctx.textAlign = "right";
-          const shipLabel = item.ship ? `${item.ship}                    ` : "";
-        ctx.fillText(`${shipLabel}${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
+          const shipLabel = item.ship ? `${item.ship}  ` : "";
+          ctx.fillText(`${shipLabel}${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
         }
       }
       ctx.restore();
@@ -3506,7 +3519,8 @@ function safeGameLoop(now) {
 
       if (!isNukingTransition && !isFrozen && elapsed - lastSpawnTime > spawnInterval) {
         lastSpawnTime = elapsed;
-        let hpMultiplier = (elapsed >= 60.0) ? Math.pow(1.08, Math.floor((elapsed - 60.0) / 20.0)) : 1.0;
+        // [적 비행기 체력 증가 수준] (20초당 1.20배로 세팅, 초반에는 1.4였음)
+        let hpMultiplier = (elapsed >= 60.0) ? Math.pow(1.2, Math.floor((elapsed - 60.0) / 20.0)) : 1.0;
         const calculatedHp = Math.max(1, Math.round((2 + Math.random() * 3) * hpScale * hpMultiplier));
 
         enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + Math.min(1.0, elapsed / 180.0) * 3.5, Math.floor(Math.random() * 4), false, false));
