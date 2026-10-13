@@ -1710,8 +1710,8 @@ class HomingMissile {
     this.isType0 = isType0;
     this.isStraight = isStraight;
     this.missileLv = missileLv;
-    // 16렙 미사일형: 개당 50% 확률로 1초 미만(NEW) vs 2초 초과(OLD) 타깃 모드 지정
-    this.targetTimeMode = (isType0 && missileLv >= 16) ? (Math.random() < 0.5 ? "NEW" : "OLD") : "ANY";
+    // 16렙 미사일형: 개당 50% 확률로 1초 미만(NEW) vs 내 기체 앞쪽 초근접 위협 적(DANGER) 타깃 모드 지정
+    this.targetTimeMode = (isType0 && missileLv >= 16) ? (Math.random() < 0.5 ? "NEW" : "DANGER") : "ANY";
     this.radius = isType0 ? 7.5 : 6.0;
     this.life = 4.0;
     this.target = null;
@@ -1747,19 +1747,18 @@ class HomingMissile {
       let fallbackTarget = null;
       let minFallbackDistSq = Infinity;
 
+      const isLv16 = (this.isType0 && this.missileLv >= 16);
+
       for (let i = 0; i < enemiesList.length; i++) {
         const e = enemiesList[i];
         if (!e || e.hp <= 0 || e.isDead || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > maxYBound) continue;
 
-        // 16렙 타깃 시간 필터링 조건
-        const aliveT = e.aliveTime || 0;
-        const matchesTimeCondition = (this.targetTimeMode === "NEW" && aliveT < 1.0) ||
-                                     (this.targetTimeMode === "OLD" && aliveT >= 2.0) ||
-                                     (this.targetTimeMode === "ANY");
+        // [핵심 1] 내 비행기보다 아래로 지나쳐간 적은 뒤쫓지 않음 (U턴 역주행 방지)
+        if (player && e.y > player.y) continue;
 
         const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
 
-        // 조건에 맞는 적이 없을 때를 대비한 전체 대상 기본 폴백
+        // 기본 폴백 (내 앞쪽 적 중 가장 가까운 적)
         if (dSq < minFallbackDistSq) {
           minFallbackDistSq = dSq;
           fallbackTarget = e;
@@ -1767,18 +1766,26 @@ class HomingMissile {
 
         // 미사일형(Type 0) 타깃 탐색
         if (this.isType0 && player) {
-          const isLeftCandidate = (e.x <= player.x);
-          const isRightCandidate = (e.x >= player.x);
-          const isSideMatch = (this.side === "LEFT" && isLeftCandidate) || (this.side === "RIGHT" && isRightCandidate);
-
-          // 16렙에서는 시간 조건(NEW/OLD)을 만족하는 적을 최우선 선정
-          if (this.targetTimeMode !== "ANY") {
-            if (matchesTimeCondition && dSq < minPrimaryDistSq) {
-              minPrimaryDistSq = dSq;
-              primaryTarget = e;
+          if (isLv16) {
+            if (this.targetTimeMode === "NEW") {
+              // 상단 스폰 적 (1.0초 미만) 중 가장 가까운 적 선제 요격
+              if ((e.aliveTime || 0) < 1.0 && dSq < minPrimaryDistSq) {
+                minPrimaryDistSq = dSq;
+                primaryTarget = e;
+              }
+            } else {
+              // [핵심 2] DANGER 모드: 내 비행기 머리 바로 위에서 내려오는 가장 위협적인 적 타겟팅
+              const distToPlayerY = player.y - e.y;
+              if (distToPlayerY > 0 && distToPlayerY < minPrimaryDistSq) {
+                minPrimaryDistSq = distToPlayerY;
+                primaryTarget = e;
+              }
             }
           } else {
             // 16렙 미만: 기존 좌/우 측면 적 우선 타겟팅
+            const isLeftCandidate = (e.x <= player.x);
+            const isRightCandidate = (e.x >= player.x);
+            const isSideMatch = (this.side === "LEFT" && isLeftCandidate) || (this.side === "RIGHT" && isRightCandidate);
             if (isSideMatch && dSq < minPrimaryDistSq) {
               minPrimaryDistSq = dSq;
               primaryTarget = e;
@@ -2932,15 +2939,24 @@ class Bullet {
 
     } else if (this.bulletType === "POWER") {
       // 3. 파워 탄환: 사전 캐싱된 Gradient를 사용하며 절대 좌표로 직접 드로잉
+      } else if (this.bulletType === "POWER") {
+      const rKey = Math.round(this.radius);
       if (!window.cachedPowerBulletGrads) window.cachedPowerBulletGrads = new Map();
-      let grad = window.cachedPowerBulletGrads.get(this.radius);
+      let grad = window.cachedPowerBulletGrads.get(rKey);
       if (!grad) {
-        grad = ctx.createRadialGradient(0, 0, 1, 0, 0, this.radius);
+        grad = ctx.createRadialGradient(0, 0, 1, 0, 0, rKey);
         grad.addColorStop(0, "#ffffff");
         grad.addColorStop(0.3, "#ffe600");
         grad.addColorStop(1, "#ff2244");
-        window.cachedPowerBulletGrads.set(this.radius, grad);
+        window.cachedPowerBulletGrads.set(rKey, grad);
       }
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
       ctx.save();
       ctx.translate(this.x, this.y);
       ctx.fillStyle = grad;
