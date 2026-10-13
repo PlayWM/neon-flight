@@ -5369,27 +5369,26 @@ let currentSessionRank = 1;
 let totalRankCount = 1;
 
 function handleGameOver() {
-  setTimeout(() => {
-    gameState = 3;
+  // 지연 없이 즉시 게임오버 상태로 전환하여 버튼 렌더링 보장
+  gameState = 3;
 
-    // 전체 랭킹에서 내 순위 계산
-    const baseSource = (allLeaderboardList && allLeaderboardList.length > 0) ? allLeaderboardList : top10List;
-    const curScore = Math.floor(score);
-    let low = 0, high = baseSource.length;
-    while (low < high) {
-      const mid = (low + high) >>> 1;
-      if (baseSource[mid].score > curScore) low = mid + 1;
-      else high = mid;
-    }
-    currentSessionRank = low + 1;
-    totalRankCount = Math.max(1, baseSource.length + 1);
+  // 전체 랭킹에서 내 순위 계산
+  const baseSource = (allLeaderboardList && allLeaderboardList.length > 0) ? allLeaderboardList : top10List;
+  const curScore = Math.floor(score);
+  let low = 0, high = baseSource.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (baseSource[mid].score > curScore) low = mid + 1;
+    else high = mid;
+  }
+  currentSessionRank = low + 1;
+  totalRankCount = Math.max(1, baseSource.length + 1);
 
-    // 탑 10 여부와 무관하게 이름 입력창 상시 오픈
-    nameInputOverlay.style.display = "block";
-    nameInput.value = "";
-    nameInput.placeholder = "ENTER PILOT NAME";
-    nameInput.focus();
-  }, 800);
+  // 입력창 오픈 및 포커스
+  nameInputOverlay.style.display = "block";
+  nameInput.value = "";
+  nameInput.placeholder = "ENTER PILOT NAME";
+  nameInput.focus();
 }
 
 setSelectScreenMode();
