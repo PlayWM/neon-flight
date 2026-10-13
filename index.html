@@ -1409,7 +1409,8 @@ class Player {
         const offsetX = (this.twinFireSide === 0) ? -14 : 14;
         this.twinFireSide = 1 - this.twinFireSide;
         bullets.push(new Bullet(px + offsetX, py - 20, 0, -16, dmg, 4.0, "TWIN"));
-        playTone(680, 0.035, "triangle", -200, 0.04);
+        // 볼륨 50% 증가 (0.04 -> 0.06)
+        playTone(680, 0.035, "triangle", -200, 0.06);
       }
     } else if (this.pType === 1) {
       const mainDmg = dmg * 1.5;
