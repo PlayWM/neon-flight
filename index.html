@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261013F.15";
+const VERSION_STR = "v20261013F.19";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1409,8 +1409,12 @@ class Player {
         const offsetX = (this.twinFireSide === 0) ? -14 : 14;
         this.twinFireSide = 1 - this.twinFireSide;
         bullets.push(new Bullet(px + offsetX, py - 20, 0, -16, dmg, 4.0, "TWIN"));
-        // 볼륨 50% 증가 (0.04 -> 0.06)
-        playTone(680, 0.035, "triangle", -200, 0.06);
+
+        // 트윈 전용 날카로운 전기 방전("지지직") 소리
+        playTone(1150, 0.045, "sawtooth", -750, 0.09);
+        setTimeout(() => {
+          playTone(850, 0.03, "sawtooth", -450, 0.07);
+        }, 18);
       }
     } else if (this.pType === 1) {
       const mainDmg = dmg * 1.5;
