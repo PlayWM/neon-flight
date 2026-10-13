@@ -283,7 +283,7 @@ function fetchTop10() {
             targetD.setDate(targetD.getDate() - i);
             temp7.push({
               key: getDayKey(targetD),
-              date: i === 0 ? `${getLabel(targetD)}(오늘)` : getLabel(targetD),
+              date: getLabel(targetD), // (오늘) 제거하고 날짜만 표기
               count: 0
             });
           }
@@ -4205,14 +4205,14 @@ function safeGameLoop(now) {
           const curData = (days && days[di]) ? days[di] : { date: "-", count: 0 };
           ctx.textAlign = "center";
           
-          // 날짜 레이블 (오늘: #ffe600, 이전: #94a3b8)
+          // 날짜 레이블 (오늘: #ffe600, 이전: #94a3b8) - 폰트 한 단계 확대 (8.5px -> 10px)
           ctx.fillStyle = (di === 6) ? "#ffe600" : "#94a3b8";
-          ctx.font = `8.5px ${FONT_FAMILY}`;
+          ctx.font = `bold 10px ${FONT_FAMILY}`;
           ctx.fillText(curData.date || "-", cx, statsBoxY + 31);
           
-          // 횟수
+          // 횟수 - 폰트 한 단계 확대 (10px -> 11.5px)
           ctx.fillStyle = (di === 6) ? "#00f5ff" : "#ffffff";
-          ctx.font = `bold 10px ${FONT_FAMILY}`;
+          ctx.font = `bold 11.5px ${FONT_FAMILY}`;
           ctx.fillText(`${curData.count}회`, cx, statsBoxY + 46);
 
           if (di < 6) {
