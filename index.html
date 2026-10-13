@@ -1728,6 +1728,7 @@ class HomingMissile {
       }
     }
 
+    // [추가] 직진 미사일일 경우 유도 로직을 타지 않고 수직 직진 이동
     if (this.isStraight) {
       this.vx = 0;
       this.vy = -(this.currentSpeed || 15.0);
