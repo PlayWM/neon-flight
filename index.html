@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261013F.19";
+const VERSION_STR = "v20261013F.21";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1299,8 +1299,32 @@ class Player {
           homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", false));
         }
       } else {
-        homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", isType0));
-        homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", isType0));
+        if (isType0) {
+          // 미사일 스킬 레벨에 따른 직진 미사일 확률 설정 (16렙 20%, 8렙 10%, 기본 0%)
+          let straightRate = 0;
+          if (this.missileStat >= 16) straightRate = 0.20;
+          else if (this.missileStat >= 8) straightRate = 0.10;
+
+          const isStraight = (straightRate > 0 && Math.random() < straightRate);
+
+          if (isStraight) {
+            // 직진 미사일: 양쪽 동시 발사 대신 0.5초 딜레이 교차 발사
+            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, 0, -15, dmg, "LEFT", true, true));
+            setTimeout(() => {
+              if (this.isAlive && gameState === 1) {
+                homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 0, -15, dmg, "RIGHT", true, true));
+                playTone(750, 0.12, "triangle", 200, 0.11);
+              }
+            }, 500); // 0.5초 딜레이
+          } else {
+            // 기존 일반 유도 미사일 발사
+            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", true, false));
+            homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", true, false));
+          }
+        } else {
+          homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", false, false));
+          homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", false, false));
+        }
       }
       playTone(isType0 ? 750 : 550, 0.12, isType0 ? "triangle" : "sine", 200, 0.11);
     }
