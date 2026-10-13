@@ -1575,6 +1575,70 @@ class MissileShadow {
     ctx.restore();
   }
 }
+
+// [여기에 추가]
+class MissileShard {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 2.0 + Math.random() * 2.5;
+    this.vx = Math.cos(ang) * spd;
+    this.vy = Math.sin(ang) * spd;
+    this.radius = 4.0;
+    this.life = 2.0;       // 2초 지속 후 소멸
+    this.totalLife = 2.0;
+    this.rot = Math.random() * Math.PI * 2;
+    this.rotSpd = (Math.random() - 0.5) * 8.0;
+  }
+  update(dt, enemiesList) {
+    this.life -= dt;
+    this.x += this.vx * (dt * 60);
+    this.y += this.vy * (dt * 60);
+    this.rot += this.rotSpd * dt;
+
+    if (this.life <= 0) return;
+
+    // 적 1개 충돌 판정 (보호막 적, 회색 돌맹이 제외)
+    for (let ei = enemiesList.length - 1; ei >= 0; ei--) {
+      const e = enemiesList[ei];
+      if (!e || e.isDead || e.hp <= 0 || e.isBeingSucked || e.y < 20) continue;
+      // 보호막 비행기 및 회색 돌맹이(isHeavy)에는 반응하지 않음
+      if (e.hasShield || e.isHeavy) continue;
+
+      const dSq = (this.x - e.x) * (this.x - e.x) + (this.y - e.y) * (this.y - e.y);
+      const hitR = this.radius + e.radius;
+      if (dSq <= hitR * hitR) {
+        safeKillEnemy(e, "#00f5ff");
+        playExplosionSound();
+        this.life = 0; // 적 1개 파괴 후 즉시 파편 삭제
+        break;
+      }
+    }
+  }
+  draw() {
+    if (this.life <= 0) return;
+    const alpha = Math.max(0, this.life / this.totalLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.fillStyle = "#00f5ff";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.0;
+    // 날카로운 네온 마름모 파편
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(3, 0);
+    ctx.lineTo(0, 6);
+    ctx.lineTo(-3, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 class HomingMissile {
   constructor(x, y, vx, vy, dmg, side="LEFT", isType0=false) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
@@ -3283,7 +3347,7 @@ if (type === 3) {
 }
 
 function initBattleState() {
-  bullets = []; homingMissiles = []; stationaryLasers = []; missileShadows = []; rockDebrisList = []; hitImpacts = []; suckingEntities = [];
+  bullets = []; homingMissiles = []; missileShards = []; stationaryLasers = []; missileShadows = []; rockDebrisList = []; hitImpacts = []; suckingEntities = [];
   enemies = []; bossMissiles = []; bossDropItems = []; blackHoles = []; activeLasers = []; currentBoss = null;
   twinFieldBolts = [];
   enemyLightningShocks = [];
@@ -3584,8 +3648,11 @@ function handlePointerDown(e) {
       const finalName = enteredName.length > 0 ? enteredName : "Player 1";
       uploadScore(finalName, score);
       nameInputOverlay.style.display = "none";
-      setSelectScreenMode();
-      gameState = 0;
+
+      // 점수 전송 요청이 완료될 수 있도록 0.3초 여유를 두고 브라우저 완전 새로고침
+      setTimeout(() => {
+        location.reload();
+      }, 300);
     }
   }
 }
@@ -3683,6 +3750,7 @@ let meteorManager = new MeteorManager();
 let player = null;
 let bullets = [];
 let homingMissiles = [];
+let missileShards = []; // 미사일 파편 배열 추가
 let stationaryLasers = [];
 let missileShadows = [];
 let rockDebrisList = [];
@@ -4248,6 +4316,12 @@ function safeGameLoop(now) {
           }
         }
 
+        // 미사일 파편 수명 및 적 충돌 업데이트
+        for (let i = missileShards.length - 1; i >= 0; i--) {
+          missileShards[i].update(dt, enemies);
+          if (missileShards[i].life <= 0) missileShards.splice(i, 1);
+        }
+
         for (let i = stationaryLasers.length - 1; i >= 0; i--) {
           stationaryLasers[i].update(dt, enemies);
           if (stationaryLasers[i].life <= 0) stationaryLasers.splice(i, 1);
@@ -4300,7 +4374,13 @@ function safeGameLoop(now) {
             const missileDamage = m.dmg;
 
             homingMissiles.splice(mi, 1);
+            const wasDeadBefore = e.isDead;
             applyDamageToEnemy(e, missileDamage, "MISSILE_NEEDLE");
+
+            // 미사일로 적이 파괴되었을 때 30% 확률로 파편 생성
+            if (!wasDeadBefore && e.isDead && Math.random() < 0.30) {
+              missileShards.push(new MissileShard(hitX, hitY));
+            }
 
             // 스플래시 타깃을 임시 배열로 먼저 확보한 뒤 데미지를 적용하여 배열 순회 중 인덱스 충돌 차단
             if (isType0Missile) {
@@ -4468,6 +4548,7 @@ function safeGameLoop(now) {
       for (let i = 0; i < missileShadows.length; i++) missileShadows[i].draw();
       for (let i = 0; i < bullets.length; i++) bullets[i].draw();
       for (let i = 0; i < homingMissiles.length; i++) homingMissiles[i].draw();
+      for (let i = 0; i < missileShards.length; i++) missileShards[i].draw(); // 파편 드로잉 추가
       for (let i = 0; i < stationaryLasers.length; i++) stationaryLasers[i].draw();
 
       for (let i = 0; i < activeLasers.length; i++) {
