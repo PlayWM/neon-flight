@@ -1365,7 +1365,7 @@ class Player {
           x: spawnX,
           y: spawnY,
           elapsed: 0.0,
-          totalDuration: 1.0, // 예전 초기 노출 시간 1.8초 원복
+          totalDuration: 1.0, // 예전 초기 노출 시간 1.0초 원복
           dmgTimer: 0.9, // 생성 즉시 닿는 적에게 1차 타격 바로 적용
           dmgVal: this.powerStat
         });
@@ -4393,7 +4393,7 @@ function safeGameLoop(now) {
                 b.nearShockCooldown = true;
                 const toAng = Math.atan2(b.y - e.y, b.x - e.x);
                 triggerEnemyLightningShock(e.x + Math.cos(toAng) * (e.radius * 0.8), e.y + Math.sin(toAng) * (e.radius * 0.8), e);
-                applyDamageToEnemy(e, b.dmg * 0.45, "TWIN"); // 스침 데미지 45% 부여
+                applyDamageToEnemy(e, b.dmg * 0.7, "TWIN"); // 스침 데미지 70% 부여
               }
             }
           }
