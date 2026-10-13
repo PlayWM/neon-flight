@@ -9,7 +9,7 @@
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #030308; display: flex; justify-content: center; align-items: center; }
   #canvas-container { position: relative; width: 100%; max-width: 450px; height: 100%; max-height: 800px; display: flex; justify-content: center; align-items: center; }
   canvas { width: 100%; height: 100%; max-width: 450px; max-height: 800px; object-fit: contain; background: #04040c; touch-action: none; display: block; }
-  #name-input-overlay { display: none; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; } width: 260px; z-index: 10; }
+  #name-input-overlay { display: none; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; }
   #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; font-size: 14px; text-align: center; outline: none; box-shadow: 0 0 8px rgba(0,245,255,0.4); }
 </style>
 </head>
@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261013F.07";
+const VERSION_STR = "v20261013F.11";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -3497,15 +3497,12 @@ function handlePointerDown(e) {
       return;
     }
 
-    // 2. 카운트다운 진행 중에는 조작 차단
-    if (stopResumeCountdown > 0) return;
-
-    // 3. Stop 버튼 및 좌하단 스킬 3줄 영역(x: 10~135, y: 715~795) 터치 체크
+    // Stop 버튼 및 좌하단 스킬 3줄 영역(x: 10~135, y: 715~795) 터치 체크
     const isStopTouchZone = (coords.x >= 10 && coords.x <= 135 && coords.y >= 715 && coords.y <= 795);
     if (isStopTouchZone) {
       if (stopGaugeTime >= STOP_GAUGE_MAX) {
         isGameStopped = true;
-        stopGaugeTime = 0.0; // 사용 후 게이지 0%로 초기화
+        stopGaugeTime = 0.0;
         playTone(450, 0.2, "sawtooth", -150, 0.15);
         return;
       }
