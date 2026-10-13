@@ -4174,7 +4174,7 @@ function safeGameLoop(now) {
           let activeShieldCount = 0;
           for (let i = 0; i < enemies.length; i++) if (enemies[i].hasShield && !enemies[i].isDead && enemies[i].hp > 0) activeShieldCount++;
           if (activeShieldCount === 0) {
-            const spawnBatch = Math.random() < 0.5 ? 0 : 1;
+            const spawnBatch = Math.random() < 0.5 ? 1 : 1;
             for (let s = 0; s < spawnBatch; s++) {
               enemies.push(new Enemy(calculatedHp, CONFIG.BASE_ENEMY_SPEED + 1.0, Math.floor(Math.random() * 4), true, false));
             }
@@ -4186,7 +4186,7 @@ function safeGameLoop(now) {
         let activeHeavyCount = 0;
         for (let i = 0; i < enemies.length; i++) if (enemies[i].isHeavy && !enemies[i].isDead && enemies[i].hp > 0) activeHeavyCount++;
         if (activeHeavyCount === 0 && !window.heavyDelayedSpawnTimer) {
-          const spawnBatch = Math.random() < 0.5 ? 1 : 1;
+          const spawnBatch = Math.random() < 0.5 ? 1 : 2;
           const heavySpeed = CONFIG.BASE_ENEMY_SPEED * 0.50;
           const heavyHp = 10;
           const firstX = 40 + Math.random() * (LOGICAL_WIDTH - 80);
