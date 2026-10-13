@@ -277,11 +277,11 @@ function fetchTop10() {
           const getDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           const getLabel = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 
-          const temp5 = [];
-          for (let i = 4; i >= 0; i--) {
+          const temp7 = [];
+          for (let i = 6; i >= 0; i--) {
             const targetD = new Date(now);
             targetD.setDate(targetD.getDate() - i);
-            temp5.push({
+            temp7.push({
               key: getDayKey(targetD),
               date: i === 0 ? `${getLabel(targetD)}(오늘)` : getLabel(targetD),
               count: 0
@@ -292,11 +292,11 @@ function fetchTop10() {
             if (item.time) {
               const itemDate = new Date(item.time * 1000);
               const ik = getDayKey(itemDate);
-              const targetSlot = temp5.find(t => t.key === ik);
+              const targetSlot = temp7.find(t => t.key === ik);
               if (targetSlot) targetSlot.count++;
             }
           });
-          dailyPlayCounts5 = temp5;
+          dailyPlayCounts5 = temp7;
 
           // 2. 전체 및 Top 10 랭킹 리스트 동기화
           rawItems.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
@@ -4194,28 +4194,28 @@ function safeGameLoop(now) {
         ctx.textAlign = "left";
         ctx.fillStyle = "#00f5ff";
         ctx.font = `bold 10px ${FONT_FAMILY}`;
-        ctx.fillText("RECENT 5 DAYS PLAY COUNT", 45, statsBoxY + 16);
+        ctx.fillText("RECENT 7 DAYS PLAY COUNT", 45, statsBoxY + 16);
 
-        // 5분할 열 (그리드 구분선 및 데이터)
-        const colW = (LOGICAL_WIDTH - 70) / 5;
+        // 7분할 열 (그리드 구분선 및 데이터)
+        const colW = (LOGICAL_WIDTH - 70) / 7;
         const days = dailyPlayCounts5;
 
-        for (let di = 0; di < 5; di++) {
+        for (let di = 0; di < 7; di++) {
           const cx = 35 + colW * di + colW / 2;
           const curData = (days && days[di]) ? days[di] : { date: "-", count: 0 };
           ctx.textAlign = "center";
           
           // 날짜 레이블 (오늘: #ffe600, 이전: #94a3b8)
-          ctx.fillStyle = (di === 4) ? "#ffe600" : "#94a3b8";
-          ctx.font = `9px ${FONT_FAMILY}`;
+          ctx.fillStyle = (di === 6) ? "#ffe600" : "#94a3b8";
+          ctx.font = `8.5px ${FONT_FAMILY}`;
           ctx.fillText(curData.date || "-", cx, statsBoxY + 31);
           
           // 횟수
-          ctx.fillStyle = (di === 4) ? "#00f5ff" : "#ffffff";
-          ctx.font = `bold 11px ${FONT_FAMILY}`;
+          ctx.fillStyle = (di === 6) ? "#00f5ff" : "#ffffff";
+          ctx.font = `bold 10px ${FONT_FAMILY}`;
           ctx.fillText(`${curData.count}회`, cx, statsBoxY + 46);
 
-          if (di < 4) {
+          if (di < 6) {
             ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
             ctx.beginPath();
             ctx.moveTo(35 + colW * (di + 1), statsBoxY + 22);
