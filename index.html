@@ -1365,8 +1365,8 @@ class Player {
           x: spawnX,
           y: spawnY,
           elapsed: 0.0,
-          totalDuration: 1.2, // 예전 초기 노출 시간 1.8초 원복
-          dmgTimer: 1.0, // 생성 즉시 닿는 적에게 1차 타격 바로 적용
+          totalDuration: 1.0, // 예전 초기 노출 시간 1.8초 원복
+          dmgTimer: 0.9, // 생성 즉시 닿는 적에게 1차 타격 바로 적용
           dmgVal: this.powerStat
         });
         playTone(900, 0.25, "sawtooth", -250, 0.14);
