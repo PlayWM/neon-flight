@@ -9,7 +9,7 @@
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #030308; display: flex; justify-content: center; align-items: center; }
   #canvas-container { position: relative; width: 100%; max-width: 450px; height: 100%; max-height: 800px; display: flex; justify-content: center; align-items: center; }
   canvas { width: 100%; height: 100%; max-width: 450px; max-height: 800px; object-fit: contain; background: #04040c; touch-action: none; display: block; }
-  #name-input-overlay { display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; }
+  #name-input-overlay { display: none; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; } width: 260px; z-index: 10; }
   #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; font-size: 14px; text-align: center; outline: none; box-shadow: 0 0 8px rgba(0,245,255,0.4); }
 </style>
 </head>
@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261013.01";
+const VERSION_STR = "v20261013F.07";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -3008,31 +3008,45 @@ function safeKillEnemy(e, customColor="#ffe600", isHedgehogKill=false) {
 function applyDamageToEnemy(e, dmg, bType="DEFAULT", isLaserShards=false) {
   if (hitImpacts.length < 30) hitImpacts.push(new BulletHitImpactFX(e.x, e.y, bType));
 
-  if (e.isHeavy) {
-    let hitAmount = 1;
-    if (bType === "TWIN") hitAmount = 0.5;
-    // 0.2초 틱마다 0.33씩 누적되어 약 12초(파워형 1렙 20발 발사 시간과 동일)만에 파괴
-    else if (bType === "MISSILE_NEEDLE") hitAmount = 0.33;
+  const curHitTime = performance.now() / 1000;
 
-    e.shieldHits = (e.shieldHits || 0) + hitAmount;
+  // 1. 회색 돌맹이: 연속 피격 4.5초 누적 시 파괴
+  if (e.isHeavy) {
+    if (e.lastHeavyHitTime) {
+      const timeDelta = curHitTime - e.lastHeavyHitTime;
+      if (timeDelta > 0 && timeDelta <= 1.0) {
+        e.heavyBurnedTime = (e.heavyBurnedTime || 0) + timeDelta;
+      }
+    }
+    e.lastHeavyHitTime = curHitTime;
+
     if (explosions.length < 35) explosions.push(new ExplosionFX(e.x, e.y, "#cbd5e1"));
     playTone(600, 0.05, "sawtooth", -100, 0.08);
-    if (e.shieldHits >= 20) {
+
+    if ((e.heavyBurnedTime || 0) >= 4.5) {
       safeKillEnemy(e, "#cbd5e1");
     }
     return;
   }
 
+  // 2. 보호막 비행기: 연속 피격 3.0초 누적 시 파괴
   if (e.hasShield) {
-    let hitAmount = 1;
-    if (bType === "TWIN") hitAmount = 0.5;
-    else if (bType === "MISSILE_NEEDLE") hitAmount = 0.33;
-    e.shieldHits += hitAmount;
+    if (e.lastShieldHitTime) {
+      const timeDelta = curHitTime - e.lastShieldHitTime;
+      if (timeDelta > 0 && timeDelta <= 1.0) {
+        e.shieldBurnedTime = (e.shieldBurnedTime || 0) + timeDelta;
+      }
+    }
+    e.lastShieldHitTime = curHitTime;
+
     e.freezeTimer = 0.07;
     e.vx = 0;
     if (explosions.length < 35) explosions.push(new ExplosionFX(e.x, e.y, "#00f5ff"));
     playTone(820, 0.05, "triangle", 0, 0.06);
-    if (e.shieldHits >= 20) safeKillEnemy(e);
+
+    if ((e.shieldBurnedTime || 0) >= 3.0) {
+      safeKillEnemy(e);
+    }
   } else {
     e.hp -= dmg;
     if (e.hp <= 0) safeKillEnemy(e);
@@ -3197,6 +3211,13 @@ let inGameElapsedTime = 0;
 let lastSpawnTime = 0;
 let nextBossTargetTime = 90.0;
 
+// [Stop 일시정지 시스템 변수]
+let stopGaugeTime = 0.0; // 0 ~ 20.0초
+const STOP_GAUGE_MAX = 20.0;
+let isGameStopped = false; // 일시정지 상태 여부
+let stopResumeCountdown = 0.0; // 재개 카운트다운 (3.0초)
+let stopSpeedRestoreTimer = 0.0; // 속도 회복 타이머 (3.0초)
+
 let minigameTargetOption = null;
 let minigameRollingTime = 10;
 let minigameSelectedTime = null;
@@ -3281,6 +3302,11 @@ function initBattleState() {
   lastSpawnTime = 0;
   nextBossTargetTime = 90.0;
   isTouchActive = false;
+  // Stop 시스템 리셋
+  stopGaugeTime = 0.0;
+  isGameStopped = false;
+  stopResumeCountdown = 0.0;
+  stopSpeedRestoreTimer = 0.0;
   randomPickShowcaseActive = false;
   statZoomIndex = -1;
   meteorManager.reset();
@@ -3461,6 +3487,30 @@ function handlePointerDown(e) {
       else if (coords.y >= 395 && coords.y <= 470) startBattle(3);
     }
   } else if (gameState === 1 && player && player.isAlive && !playerDeathCinematic.active) {
+    // 카운트다운 진행 중에는 일체 입력 무시
+    if (stopResumeCountdown > 0) return;
+
+    // 일시정지 상태에서 터치 시 1회만 카운트다운 시작
+    if (isGameStopped) {
+      stopResumeCountdown = 3.0;
+      playTone(600, 0.15, "triangle", 0, 0.15);
+      return;
+    }
+
+    // 2. 카운트다운 진행 중에는 조작 차단
+    if (stopResumeCountdown > 0) return;
+
+    // 3. Stop 버튼 및 좌하단 스킬 3줄 영역(x: 10~135, y: 715~795) 터치 체크
+    const isStopTouchZone = (coords.x >= 10 && coords.x <= 135 && coords.y >= 715 && coords.y <= 795);
+    if (isStopTouchZone) {
+      if (stopGaugeTime >= STOP_GAUGE_MAX) {
+        isGameStopped = true;
+        stopGaugeTime = 0.0; // 사용 후 게이지 0%로 초기화
+        playTone(450, 0.2, "sawtooth", -150, 0.15);
+        return;
+      }
+    }
+
     if (hedgehogLauncher.timeStopTimer <= 0) {
       player.targetX = coords.x;
       player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - 101));
@@ -3530,7 +3580,7 @@ function handlePointerDown(e) {
     playTone(523, 0.15, "triangle", 0, 0.15);
   } else if (gameState === 3) {
     const popY = LOGICAL_HEIGHT * 0.3;
-    const btnRect = { x: LOGICAL_WIDTH / 2 - 90, y: popY + 140, w: 180, h: 42 };
+    const btnRect = { x: LOGICAL_WIDTH / 2 - 90, y: popY + 155, w: 180, h: 42 };
     if (coords.x >= btnRect.x && coords.x <= btnRect.x + btnRect.w && coords.y >= btnRect.y && coords.y <= btnRect.y + btnRect.h) {
       const enteredName = nameInput.value.trim();
       // 이름 미입력 시 "Player 1" 자동 적용
@@ -4041,13 +4091,44 @@ function safeGameLoop(now) {
       if (elapsedShowcase >= 3.0) initBattleState();
 
     } else if (gameState === 1) {
-      const isFrozen = (hedgehogLauncher.timeStopTimer > 0);
-      if (isFrozen) {
-        hedgehogLauncher.timeStopTimer = Math.max(0, hedgehogLauncher.timeStopTimer - dt);
-      } else {
-        inGameElapsedTime += dt;
+      // [Stop 일시정지 로직 처리]
+    if (isGameStopped) {
+      // 완전 정지 상태 렌더링 유지 (업데이트 스킵)
+      drawDynamicDeepSpaceBackground(ctx, 0);
+      // ... 아래 렌더링 코드로 직행
+    }
+
+    if (stopResumeCountdown > 0) {
+      stopResumeCountdown = Math.max(0, stopResumeCountdown - dt);
+      if (stopResumeCountdown <= 0) {
+        stopResumeCountdown = 0.0;
+        isGameStopped = false; // 정지 상태 완전 해제 (재시작 확정)
+        stopSpeedRestoreTimer = 3.0; // 3초간 50% -> 100% 점진 회복 시작
       }
-      const elapsed = inGameElapsedTime;
+    }
+
+    // 복귀 시 50% 시작 -> 3초간 100%로 점진 회복 배율 계산
+    let resumeSpeedScale = 1.0;
+    if (stopSpeedRestoreTimer > 0) {
+      stopSpeedRestoreTimer = Math.max(0, stopSpeedRestoreTimer - dt);
+      const restoreProgress = 1.0 - (stopSpeedRestoreTimer / 3.0); // 0.0 -> 1.0
+      resumeSpeedScale = 0.50 + restoreProgress * 0.50; // 0.5 -> 1.0
+    }
+
+    const effectiveDt = (isGameStopped || stopResumeCountdown > 0) ? 0 : (dt * resumeSpeedScale);
+
+    // Stop 게이지 충전 (게임 진행 중에만 20초 동안 충전)
+    if (!isGameStopped && stopResumeCountdown <= 0 && stopGaugeTime < STOP_GAUGE_MAX) {
+      stopGaugeTime = Math.min(STOP_GAUGE_MAX, stopGaugeTime + dt);
+    }
+
+    const isFrozen = (hedgehogLauncher.timeStopTimer > 0 || isGameStopped || stopResumeCountdown > 0);
+    if (hedgehogLauncher.timeStopTimer > 0) {
+      hedgehogLauncher.timeStopTimer = Math.max(0, hedgehogLauncher.timeStopTimer - dt);
+    } else if (!isGameStopped && stopResumeCountdown <= 0) {
+      inGameElapsedTime += effectiveDt;
+    }
+    const elapsed = inGameElapsedTime;
 
       if (player && player.isAlive && !isFrozen && !playerDeathCinematic.active) {
         let kx = 0, ky = 0;
@@ -4550,7 +4631,8 @@ function safeGameLoop(now) {
       ctx.fillText(`TIME: ${Math.floor(elapsed)}s`, LOGICAL_WIDTH - 20, 45);
       ctx.restore();
 
-      const baseBottomY = LOGICAL_HEIGHT - 12;
+      // 스킬 3가지 텍스트 위치 (Stop 버튼 공간 확보를 위해 소폭 조정)
+      const baseBottomY = LOGICAL_HEIGHT - 38;
       if (player) {
         ctx.font = `bold 13px ${FONT_FAMILY}`;
         ctx.textAlign = "left";
@@ -4562,6 +4644,48 @@ function safeGameLoop(now) {
         ctx.fillText(`RATE    : Lv.${Math.round(player.fireRateStat)}`, 14, baseBottomY - 2);
       }
 
+      // [좌하단 Stop 일시정지 게이지 버튼 렌더링 - 높이 20% 증가: 16 -> 19.2px]
+      const stopW = 110, stopH = 19.2, stopX = 14, stopY = LOGICAL_HEIGHT - 35;
+      const stopPct = Math.min(1.0, stopGaugeTime / STOP_GAUGE_MAX);
+      const isStopReady = (stopPct >= 1.0);
+
+      ctx.save();
+      // 배경 박스
+      ctx.fillStyle = "#0a0f1d";
+      drawRoundRect(ctx, stopX, stopY, stopW, stopH, 9);
+      ctx.fill();
+
+      // 충전 게이지 바
+      if (stopW * stopPct > 2) {
+        ctx.fillStyle = isStopReady ? (Math.floor(curTime * 10) % 2 === 0 ? "#00f5ff" : "#ffe600") : "rgba(0, 245, 255, 0.45)";
+        drawRoundRect(ctx, stopX, stopY, stopW * stopPct, stopH, 9);
+        ctx.fill();
+      }
+
+      // 외곽선 (100% 충전 시 네온 발광)
+      ctx.strokeStyle = isStopReady ? "#00f5ff" : "rgba(0, 245, 255, 0.35)";
+      ctx.lineWidth = isStopReady ? 2.0 : 1.0;
+      if (isStopReady) {
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "#00f5ff";
+      }
+      drawRoundRect(ctx, stopX, stopY, stopW, stopH, 9);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // STOP 문구 확대: bold 11px -> bold 12.5px
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `bold 12.5px ${FONT_FAMILY}`;
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 2.8;
+      const stopLabel = isStopReady ? "★ STOP READY" : `STOP (${Math.floor(stopPct * 100)}%)`;
+      ctx.strokeText(stopLabel, stopX + stopW / 2, stopY + stopH / 2 + 0.5);
+      ctx.fillStyle = isStopReady ? "#ffffff" : "#cceeff";
+      ctx.fillText(stopLabel, stopX + stopW / 2, stopY + stopH / 2 + 0.5);
+      ctx.restore();
+
+      // [우하단 스킬 충전 게이지 렌더링 - 일시정지 오버레이보다 먼저 렌더링되도록 위로 이동]
       const gw = 130, gh = 16, gx = LOGICAL_WIDTH - gw - 20, gy = LOGICAL_HEIGHT - 35;
       ctx.save();
 
@@ -4607,6 +4731,34 @@ function safeGameLoop(now) {
       ctx.font = `bold 12px ${FONT_FAMILY}`;
       ctx.fillText(gPct >= 0.85 ? "★ SKILL READY ★" : "SKILL GAUGE", gx, gy - 6);
       ctx.restore();
+
+      // [일시정지 중 오버레이 & 3초 카운트다운 안내 - 맨 마지막에 그려 모든 요소를 덮음]
+      if (isGameStopped || stopResumeCountdown > 0) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+        ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+        ctx.textAlign = "center";
+        if (stopResumeCountdown > 0) {
+          // 3초 카운트다운 표시
+          const countNum = Math.ceil(stopResumeCountdown);
+          ctx.fillStyle = "#ffe600";
+          ctx.font = `bold 72px ${FONT_FAMILY}`;
+          ctx.fillText(`${countNum}`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 20);
+          ctx.font = `bold 16px ${FONT_FAMILY}`;
+          ctx.fillStyle = "#00f5ff";
+          ctx.fillText("RESUMING BATTLE...", LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 50);
+        } else {
+          // 정지 상태 안내 문구
+          ctx.fillStyle = "#00f5ff";
+          ctx.font = `bold 32px ${FONT_FAMILY}`;
+          ctx.fillText("GAME PAUSED", LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 20);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = `bold 14px ${FONT_FAMILY}`;
+          ctx.fillText("TAP SCREEN TO RESUME", LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 30);
+        }
+        ctx.restore();
+      }
 
     } else if (gameState === 2) {
       ctx.textAlign = "center";
@@ -5032,11 +5184,11 @@ function safeGameLoop(now) {
       ctx.fillText(`RANK: #${currentSessionRank} / ${totalRankCount}`, LOGICAL_WIDTH / 2, popY + 70);
 
       ctx.fillStyle = "#00f5ff";
-      drawRoundRect(ctx, LOGICAL_WIDTH / 2 - 90, popY + 140, 180, 42, 8);
+      drawRoundRect(ctx, LOGICAL_WIDTH / 2 - 90, popY + 155, 180, 42, 8);
       ctx.fill();
       ctx.fillStyle = "#080c18";
       ctx.font = `bold 15px ${FONT_FAMILY}`;
-      ctx.fillText("SUBMIT & RESTART", LOGICAL_WIDTH / 2, popY + 166);
+      ctx.fillText("SUBMIT & RESTART", LOGICAL_WIDTH / 2, popY + 181);
       ctx.restore();
     }
   } catch(err) {
