@@ -1300,26 +1300,29 @@ class Player {
         }
       } else {
         if (isType0) {
-          // 미사일 스킬 레벨에 따른 직진 미사일 확률 설정 (16렙 20%, 8렙 10%, 기본 0%)
+          // 미사일 스킬 레벨에 따른 개별 미사일 수직 직진 점유율 (16렙 20%, 8렙 10%, 기본 0%)
           let straightRate = 0;
           if (this.missileStat >= 16) straightRate = 0.20;
           else if (this.missileStat >= 8) straightRate = 0.10;
 
-          const isStraight = (straightRate > 0 && Math.random() < straightRate);
+          const leftIsStraight = (straightRate > 0 && Math.random() < straightRate);
+          const rightIsStraight = (straightRate > 0 && Math.random() < straightRate);
+          const curMLv = this.missileStat;
 
-          if (isStraight) {
-            // 직진 미사일: 양쪽 동시 발사 대신 0.5초 딜레이 교차 발사
-            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, 0, -15, dmg, "LEFT", true, true));
+          if (leftIsStraight || rightIsStraight) {
+            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, leftIsStraight ? 0 : -1.8, leftIsStraight ? -15 : -7, dmg, "LEFT", true, leftIsStraight, curMLv));
+            playTone(750, 0.12, "triangle", 200, 0.11);
+
             setTimeout(() => {
               if (this.isAlive && gameState === 1) {
-                homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 0, -15, dmg, "RIGHT", true, true));
+                homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, rightIsStraight ? 0 : 1.8, rightIsStraight ? -15 : -7, dmg, "RIGHT", true, rightIsStraight, curMLv));
                 playTone(750, 0.12, "triangle", 200, 0.11);
               }
-            }, 500); // 0.5초 딜레이
+            }, 500);
           } else {
-            // 기존 일반 유도 미사일 발사
-            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", true, false));
-            homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", true, false));
+            homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", true, false, curMLv));
+            homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 1.8, -7, dmg, "RIGHT", true, false, curMLv));
+            playTone(750, 0.12, "triangle", 200, 0.11);
           }
         } else {
           homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -1.8, -7, dmg, "LEFT", false, false));
@@ -1700,16 +1703,19 @@ class MissileShard {
 }
 
 class HomingMissile {
-  constructor(x, y, vx, vy, dmg, side="LEFT", isType0=false) {
+  constructor(x, y, vx, vy, dmg, side="LEFT", isType0=false, isStraight=false, missileLv=1) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
     this.dmg = dmg;
     this.side = side;
     this.isType0 = isType0;
-    this.radius = isType0 ? 7.5 : 6.0; // 크기 50% 확대 (5.0 -> 7.5, 4.0 -> 6.0)
+    this.isStraight = isStraight;
+    this.missileLv = missileLv;
+    // 16렙 미사일형: 개당 50% 확률로 1초 미만(NEW) vs 2초 초과(OLD) 타깃 모드 지정
+    this.targetTimeMode = (isType0 && missileLv >= 16) ? (Math.random() < 0.5 ? "NEW" : "OLD") : "ANY";
+    this.radius = isType0 ? 7.5 : 6.0;
     this.life = 4.0;
     this.target = null;
     this.shadowTimer = 0;
-    // 미사일형(Type 0) 초기 속도 30% 감소 (12.0 -> 8.4)
     this.currentSpeed = isType0 ? 8.4 : 16.5;
   }
   update(dt, enemiesList) {
@@ -1722,9 +1728,17 @@ class HomingMissile {
       }
     }
 
+    if (this.isStraight) {
+      this.vx = 0;
+      this.vy = -(this.currentSpeed || 15.0);
+      this.x += this.vx * (dt * 60);
+      this.y += this.vy * (dt * 60);
+      return;
+    }
+
     const maxYBound = this.isType0 ? (LOGICAL_HEIGHT + 20) : (LOGICAL_HEIGHT * 0.90);
 
-    // 타깃 유효성 정밀 검증: 배열에 없거나 이미 죽었거나 흡수 중이면 즉시 타깃 해제
+    // 타깃 유효성 검증
     if (!this.target || this.target.hp <= 0 || this.target.isDead || this.target.isBeingSucked || !enemiesList.includes(this.target) || (!this.isType0 && this.target.y > maxYBound)) {
       this.target = null;
       let primaryTarget = null;
@@ -1736,26 +1750,40 @@ class HomingMissile {
         const e = enemiesList[i];
         if (!e || e.hp <= 0 || e.isDead || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > maxYBound) continue;
 
+        // 16렙 타깃 시간 필터링 조건
+        const aliveT = e.aliveTime || 0;
+        const matchesTimeCondition = (this.targetTimeMode === "NEW" && aliveT < 1.0) ||
+                                     (this.targetTimeMode === "OLD" && aliveT >= 2.0) ||
+                                     (this.targetTimeMode === "ANY");
+
         const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
 
-        // 전체 대상 중 가장 가까운 적(적이 1개일 때를 대비한 폴백)
+        // 조건에 맞는 적이 없을 때를 대비한 전체 대상 기본 폴백
         if (dSq < minFallbackDistSq) {
           minFallbackDistSq = dSq;
           fallbackTarget = e;
         }
 
-        // 미사일형(Type 0) 특수 미사일: 각자 발사된 측면(LEFT/RIGHT)의 적을 우선 타겟팅
+        // 미사일형(Type 0) 타깃 탐색
         if (this.isType0 && player) {
           const isLeftCandidate = (e.x <= player.x);
           const isRightCandidate = (e.x >= player.x);
-          if ((this.side === "LEFT" && isLeftCandidate) || (this.side === "RIGHT" && isRightCandidate)) {
-            if (dSq < minPrimaryDistSq) {
+          const isSideMatch = (this.side === "LEFT" && isLeftCandidate) || (this.side === "RIGHT" && isRightCandidate);
+
+          // 16렙에서는 시간 조건(NEW/OLD)을 만족하는 적을 최우선 선정
+          if (this.targetTimeMode !== "ANY") {
+            if (matchesTimeCondition && dSq < minPrimaryDistSq) {
+              minPrimaryDistSq = dSq;
+              primaryTarget = e;
+            }
+          } else {
+            // 16렙 미만: 기존 좌/우 측면 적 우선 타겟팅
+            if (isSideMatch && dSq < minPrimaryDistSq) {
               minPrimaryDistSq = dSq;
               primaryTarget = e;
             }
           }
         } else if (!this.isType0 && player) {
-          // 일반 미사일 기존 분기 유지
           if (this.side === "LEFT" && e.x > player.x) continue;
           if (this.side === "RIGHT" && e.x < player.x) continue;
           if (dSq < minPrimaryDistSq) {
@@ -1765,7 +1793,6 @@ class HomingMissile {
         }
       }
 
-      // 담당 방향에 적이 있으면 그 적을 개별 조준하고, 적이 1개이거나 한쪽에만 몰려있으면 가장 가까운 적 조준
       this.target = primaryTarget || fallbackTarget;
     }
 
@@ -2993,6 +3020,7 @@ class Enemy {
     this.vx = 0;
     this.maxHp = maxHp;
     this.hp = maxHp;
+    this.aliveTime = 0.0; // 화면 노출 경과 시간 (초)
     this.speed = isHeavy ? baseSpeed : baseSpeed * (0.75 + Math.random() * 0.7);
     this.patternType = isHeavy ? "STRAIGHT" : ["STRAIGHT", "SINE", "SMOOTH_CURVE", "DIVE", "ZIGZAG"][Math.floor(Math.random() * 5)];
     this.sinePhase = Math.random() * Math.PI * 2;
@@ -3016,6 +3044,7 @@ class Enemy {
   }
   update(dt, elapsed, speedScale=1.0, widthScale=1.0) {
     if (this.isBeingSucked) return;
+    this.aliveTime += dt; // 노출 시간 누적
     if (this.freezeTimer > 0) {
       this.freezeTimer -= dt;
       this.vx = 0;
