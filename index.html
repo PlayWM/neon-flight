@@ -4204,12 +4204,12 @@ function safeGameLoop(now) {
         player.shoot(curTime, bullets);
       }
 
-      // 워밍업 시간이 아닐 때만 메테오 및 적 스폰 로직 정상 구동
+      // 워밍업 시간이 아닐 때만 메테오 스폰 로직 구동
       if (window.battleWarmupTimer <= 0) {
         if (meteorManager && player && !isFrozen) {
           meteorManager.update(dt, elapsed, player, bullets, enemies);
         }
-        // ... (이 아래에 있는 기존 적 스폰 및 보스 출현 로직들이 자연스럽게 포함됨)
+      } // <-- 닫는 중괄호 추가 완료
 
       let speedScale = (elapsed < 60.0) ? 0.70 : (elapsed <= 90.0 ? 0.70 + ((elapsed - 60.0) / 30.0) * 0.30 : 1.0);
       let widthScale = speedScale;
