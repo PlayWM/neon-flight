@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261014.18";
+const VERSION_STR = "v20261015.01";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1604,7 +1604,7 @@ class HomingMissile {
     this.shadowTimer += dt;
     if (this.shadowTimer >= 0.02) {
       this.shadowTimer = 0;
-      if (missileShadows.length < 120) {
+      if (missileShadows.length < 40) { // 120개 -> 40개로 대폭 축소하여 메모리 가벼움 유지
         missileShadows.push(new MissileShadow(this.x, this.y, this.radius, this.isType0));
       }
     }
@@ -3035,9 +3035,9 @@ function safeKillEnemy(e, customColor="#ffe600", isHedgehogKill=false) {
 
   if (!e.isBeingSucked) {
     if (e.isHeavy) {
-      if (rockDebrisList.length < 20) rockDebrisList.push(new RockDebrisFX(e.x, e.y));
+      if (rockDebrisList.length < 10) rockDebrisList.push(new RockDebrisFX(e.x, e.y)); // 20 -> 10
     } else {
-      if (explosions.length < 35) explosions.push(new ExplosionFX(e.x, e.y, customColor));
+      if (explosions.length < 20) explosions.push(new ExplosionFX(e.x, e.y, customColor)); // 35 -> 20
     }
   }
 
@@ -3339,13 +3339,12 @@ function initBattleState() {
 
   window.heavyDelayedSpawnTimer = false;
   playerDeathCinematic.active = false;
-  finalSurvivedSec = 0; // 새 게임 시작 시 이전 판 기록 리셋
+  finalSurvivedSec = 0;
   score = 0; verifiedScore = 0; skillGauge = 0.0;
   inGameElapsedTime = 0;
   lastSpawnTime = 0;
   nextBossTargetTime = 90.0;
   isTouchActive = false;
-  // Stop 시스템 리셋
   stopGaugeTime = 0.0;
   isGameStopped = false;
   stopResumeCountdown = 0.0;
@@ -3353,6 +3352,9 @@ function initBattleState() {
   randomPickShowcaseActive = false;
   statZoomIndex = -1;
   meteorManager.reset();
+  
+  // [프레임 드랍 방지] 게임 시작 및 업그레이드 복귀 직후 0.6초 동안 초기 스폰 및 무거운 연산 유예
+  window.battleWarmupTimer = 0.6; 
   gameState = 1;
 }
 
@@ -3495,9 +3497,11 @@ function playChosenImmediateReturn() {
     player.targetX = preUpgradePlayerPos.x;
     player.targetY = preUpgradePlayerPos.y;
   }
-  // 복귀 직후 화면 터치 잔여 이벤트가 비행기를 강제로 끌어당기지 않도록 200ms 동안 차단
   window.blockPointerUntil = performance.now() + 200;
   setTimeout(() => { isTouchActive = false; }, 200);
+  
+  // [프레임 드랍 방지] 업그레이드 창에서 돌아올 때도 0.6초간 버벅임 방지 유예 적용
+  window.battleWarmupTimer = 0.6;
   gameState = 1;
 }
 
@@ -4190,14 +4194,22 @@ function safeGameLoop(now) {
         }
       }
 
+      // 화면 전환 직후 0.6초 동안은 워밍업(유예) 시간으로 처리하여 뚝뚝 끊김 원천 차단
+      if (window.battleWarmupTimer > 0) {
+        window.battleWarmupTimer -= dt;
+      }
+
       if (!isNukingTransition && !isFrozen && player && player.isAlive && !playerDeathCinematic.active) {
         player.update(dt, enemies, bullets);
         player.shoot(curTime, bullets);
       }
 
-      if (meteorManager && player && !isFrozen) {
-        meteorManager.update(dt, elapsed, player, bullets, enemies);
-      }
+      // 워밍업 시간이 아닐 때만 메테오 및 적 스폰 로직 정상 구동
+      if (window.battleWarmupTimer <= 0) {
+        if (meteorManager && player && !isFrozen) {
+          meteorManager.update(dt, elapsed, player, bullets, enemies);
+        }
+        // ... (이 아래에 있는 기존 적 스폰 및 보스 출현 로직들이 자연스럽게 포함됨)
 
       let speedScale = (elapsed < 60.0) ? 0.70 : (elapsed <= 90.0 ? 0.70 + ((elapsed - 60.0) / 30.0) * 0.30 : 1.0);
       let widthScale = speedScale;
