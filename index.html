@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261014.08";
+const VERSION_STR = "v20261014.18";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -349,7 +349,6 @@ function fetchTop10() {
     }).catch(err => console.error("fetchTop10 Error:", err));
   } catch(e){}
 }
-fetchTop10();
 
 let finalSurvivedSec = 0;
 let isSubmittingScore = false; // 중복 등록 방지 잠금 변수
@@ -628,476 +627,341 @@ function drawGalaxyBackground(c, curTime) {
   c.restore();
 }
 
+// [3D 메카닉 리뉴얼] 다각형 및 고열 플라즈마 부스터 공통 헬퍼
+function drawMechPoly(c, pts, fill, stroke, lw = 1.4) {
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    if (i === 0) c.moveTo(pts[i][0], pts[i][1]);
+    else c.lineTo(pts[i][0], pts[i][1]);
+  }
+  c.closePath();
+  if (fill) { c.fillStyle = fill; c.fill(); }
+  if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw; c.stroke(); }
+}
+
+function drawMechThruster(c, x, y, w, len, col1, col2, curTime) {
+  const fl = len + Math.sin(curTime * 28 + x) * (len >= 0 ? 4 : -4);
+  c.save();
+  // 노즐 베이스
+  c.fillStyle = "#0f172a";
+  c.strokeStyle = "#475569";
+  c.lineWidth = 0.9;
+  const nozzleY = len >= 0 ? y - 2 : y - 3;
+  c.fillRect(x - w, nozzleY, w * 2, 5);
+  c.strokeRect(x - w, nozzleY, w * 2, 5);
+
+  // 외곽 플라즈마 분사구
+  const g = c.createLinearGradient(x, y, x, y + fl);
+  g.addColorStop(0, "#ffffff");
+  g.addColorStop(0.28, col1);
+  g.addColorStop(0.75, col2);
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(x - w * 0.9, y);
+  c.quadraticCurveTo(x - w * 0.4, y + fl * 0.7, x, y + fl);
+  c.quadraticCurveTo(x + w * 0.4, y + fl * 0.7, x + w * 0.9, y);
+  c.closePath();
+  c.fill();
+
+  // 고열 화이트 코어
+  c.fillStyle = "#ffffff";
+  c.beginPath();
+  c.moveTo(x - w * 0.42, y);
+  c.lineTo(x, y + fl * 0.55);
+  c.lineTo(x + w * 0.42, y);
+  c.closePath();
+  c.fill();
+
+  // 쇼크 다이아몬드 링
+  c.strokeStyle = "rgba(255, 255, 255, 0.65)";
+  c.lineWidth = 0.8;
+  c.beginPath();
+  c.ellipse(x, y + fl * 0.25, Math.abs(w * 0.38), 1.5, 0, 0, Math.PI * 2);
+  c.stroke();
+  c.restore();
+}
+
 function drawWingMissilePod(c, mx, my, isFlash=false, isType0=false) {
   c.save();
   c.translate(mx, my);
-  c.fillStyle = "#1e293b";
-  c.fillRect(-4, -6, 8, 14);
-  c.strokeStyle = "#475569";
-  c.lineWidth = 1;
-  c.strokeRect(-4, -6, 8, 14);
+  c.fillStyle = "#090d16";
+  c.strokeStyle = isType0 ? "#00f5ff" : "#64748b";
+  c.lineWidth = 1.0;
+  c.fillRect(-4.5, -6, 9, 15);
+  c.strokeRect(-4.5, -6, 9, 15);
 
   if (isType0) {
-    c.fillStyle = "#0f172a";
-    c.fillRect(-3, -8, 6, 3);
-    for (let i = -1.5; i <= 1.5; i += 3) {
-      for (let j = -4; j <= 2; j += 4) {
-        c.fillStyle = "#ff007f";
-        c.beginPath(); c.arc(i, j, 1.2, 0, Math.PI * 2); c.fill();
-      }
+    // 6연장 마이크로 미사일 해치 오픈 디테일
+    c.fillStyle = "#ff007f";
+    for (let py = -3; py <= 6; py += 4.5) {
+      c.beginPath();
+      c.arc(-2, py, 1.2, 0, Math.PI * 2);
+      c.arc(2, py, 1.2, 0, Math.PI * 2);
+      c.fill();
     }
-    c.strokeStyle = "#00f5ff";
-    c.lineWidth = 0.8;
-    c.strokeRect(-3, -5, 6, 11);
   } else {
-    c.fillStyle = "#ff0055";
-    c.beginPath();
-    c.moveTo(0, -11); c.lineTo(3, -5); c.lineTo(-3, -5);
-    c.closePath(); c.fill();
+    // 메탈릭 탄두 장착 포드
+    drawMechPoly(c, [[0, -11], [3, -5], [-3, -5]], "#ff0055", "#ffffff", 0.7);
     c.fillStyle = "#ffd700";
-    c.fillRect(-2, -2, 4, 2);
+    c.fillRect(-2, -3, 4, 2);
     c.fillStyle = "#00f5ff";
-    c.fillRect(-1.5, 2, 3, 4);
+    c.fillRect(-1.5, 1, 3, 5);
   }
 
   if (isFlash) {
-    const fGrad = c.createRadialGradient(0, -11, 1, 0, -11, 8);
+    const fGrad = c.createRadialGradient(0, -10, 1, 0, -10, 8);
     fGrad.addColorStop(0, "#ffffff");
     fGrad.addColorStop(0.5, "#ff007f");
     fGrad.addColorStop(1, "rgba(255, 0, 127, 0)");
     c.fillStyle = fGrad;
-    c.beginPath(); c.arc(0, -11, 8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(0, -10, 8, 0, Math.PI * 2); c.fill();
   }
   c.restore();
 }
+
 function drawVectorPlayer(c, type, color, scale = 1.0, flameHeight = 0, isMissileFlash=false) {
   c.save();
   c.scale(scale, scale);
   c.lineJoin = "round";
   c.lineCap = "round";
 
+  const curTime = performance.now() / 1000;
   const safeFlame = Number.isFinite(flameHeight) ? flameHeight : 0;
-  const flH = Math.max(4, 14 + Math.random() * 8 + safeFlame);
-
-  const drawThruster = (tx, ty, tw, isHeavy=false) => {
-    c.fillStyle = "#0f172a";
-    c.fillRect(tx - tw/2 - 1, ty - 2, tw + 2, 6);
-    c.strokeStyle = "#38bdf8";
-    c.lineWidth = 0.8;
-    c.strokeRect(tx - tw/2 - 1, ty - 2, tw + 2, 6);
-
-    const startY = ty + 4;
-    const endY = startY + flH;
-
-    // 실시간 그라데이션 직접 렌더링 (메모리 누수 방지 및 GC 스파이크 차단)
-    const fgOut = c.createLinearGradient(0, startY, 0, endY + 4);
-    fgOut.addColorStop(0, "rgba(255, 255, 255, 0.9)");
-    fgOut.addColorStop(0.2, color);
-    fgOut.addColorStop(0.7, "rgba(0, 150, 255, 0.3)");
-    fgOut.addColorStop(1, "rgba(0,0,0,0)");
-
-    c.fillStyle = fgOut;
-    c.beginPath();
-    c.moveTo(tx - tw/2, startY);
-    c.lineTo(tx, endY + 4);
-    c.lineTo(tx + tw/2, startY);
-    c.closePath();
-    c.fill();
-
-    // 중심부 고열 코어 다중 Gradient
-    const isRedCore = (isHeavy || safeFlame > 0);
-    const fgCore = c.createLinearGradient(0, startY, 0, startY + flH * 0.6);
-    fgCore.addColorStop(0, "#ffffff");
-    fgCore.addColorStop(0.4, isRedCore ? "#ff0044" : "#00ffff");
-    fgCore.addColorStop(1, "rgba(255, 255, 255, 0)");
-
-    c.fillStyle = fgCore;
-    c.beginPath();
-    c.moveTo(tx - tw * 0.25, startY);
-    c.lineTo(tx, startY + flH * 0.6);
-    c.lineTo(tx + tw * 0.25, startY);
-    c.closePath();
-    c.fill();
-  };
-
-  if (type === 2) { drawThruster(-12, 15, 6); drawThruster(12, 15, 6); }
-  else if (type === 1) { drawThruster(-8, 16, 7, true); drawThruster(8, 16, 7, true); }
-  else { drawThruster(-6, 14, 5); drawThruster(6, 14, 5); }
+  const baseLen = 19 + safeFlame * 0.8;
 
   if (type === 0) {
-    c.fillStyle = "#090d19"; c.strokeStyle = "#00f5ff"; c.lineWidth = 1.8;
-    // 좌우 분할 트윈 노즈콘 기체 외형
-    c.beginPath();
-    c.moveTo(-10, -28); c.lineTo(-5, -16); c.lineTo(0, -18); c.lineTo(5, -16);
-    c.lineTo(10, -28); c.lineTo(14, -12); c.lineTo(26, 10); c.lineTo(22, 17);
-    c.lineTo(13, 13); c.lineTo(0, 19); c.lineTo(-13, 13); c.lineTo(-22, 17);
-    c.lineTo(-26, 10); c.lineTo(-14, -12);
-    c.closePath(); c.fill(); c.stroke();
+    // [Type 0: MISSILE - 3D 스텔스 건쉽]
+    drawMechThruster(c, -8, 16, 4.2, baseLen, "#00f5ff", "#0044ff", curTime);
+    drawMechThruster(c, 8, 16, 4.2, baseLen, "#00f5ff", "#0044ff", curTime);
 
-    // 트윈 레이저 발사구 노즐 디테일
-    c.fillStyle = "#1e293b";
-    c.fillRect(-12, -26, 4, 8); c.fillRect(8, -26, 4, 8);
-    c.fillStyle = "#00f5ff";
-    c.fillRect(-11, -28, 2, 3); c.fillRect(9, -28, 2, 3);
-
-    c.fillStyle = "#121d33";
-    c.beginPath();
-    c.moveTo(-8, -20); c.lineTo(0, -12); c.lineTo(8, -20); c.lineTo(18, 8);
-    c.lineTo(9, 10); c.lineTo(0, 15); c.lineTo(-9, 10); c.lineTo(-18, 8);
-    c.closePath(); c.fill();
-
-    c.strokeStyle = "#00f5ff"; c.lineWidth = 0.9;
-    c.beginPath();
-    c.moveTo(-10, -18); c.lineTo(-10, -2);
-    c.moveTo(10, -18); c.lineTo(10, -2);
-    c.moveTo(-7, -4); c.lineTo(7, -4);
-    c.moveTo(-12, 4); c.lineTo(12, 4);
-    c.stroke();
+    const wg = c.createLinearGradient(-32, 0, 32, 0);
+    wg.addColorStop(0, "#0f172a"); wg.addColorStop(0.5, "#334155"); wg.addColorStop(1, "#0f172a");
+    drawMechPoly(c, [[0,-14],[18,-8],[32,12],[28,19],[15,14],[0,20],[-15,14],[-28,19],[-32,12],[-18,-8]], wg, "#38bdf8", 1.2);
 
     drawWingMissilePod(c, -26, 9, isMissileFlash, true);
     drawWingMissilePod(c, 26, 9, isMissileFlash, true);
 
+    drawMechPoly(c, [[-11,-30],[-4,-16],[0,-18],[4,-16],[11,-30],[15,-10],[12,15],[0,20],[-12,15],[-15,-10]], "#1e293b", "#00f5ff", 1.5);
+
+    // 좌/우 프리즘 레이저 발사구 코어
+    const pulse = 2.0 + Math.sin(curTime * 15) * 0.5;
+    c.fillStyle = "#00f5ff";
+    c.beginPath();
+    c.arc(-11, -29, pulse, 0, Math.PI * 2);
+    c.arc(11, -29, pulse, 0, Math.PI * 2);
+    c.fill();
+
+    // 입체 유리 캐노피
+    const cg = c.createLinearGradient(0, -14, 0, 10);
+    cg.addColorStop(0, "#e0f2fe"); cg.addColorStop(0.4, "#0284c7"); cg.addColorStop(1, "#082f49");
+    drawMechPoly(c, [[0,-15],[5,-4],[3,9],[0,12],[-3,9],[-5,-4]], cg, "#7dd3fc", 1.0);
+
   } else if (type === 1) {
-    c.fillStyle = "#140a0c"; c.strokeStyle = "#ff2244"; c.lineWidth = 2.0;
-    c.beginPath();
-    c.moveTo(0, -25); c.lineTo(15, -13); c.lineTo(26, -2); c.lineTo(24, 18);
-    c.lineTo(12, 15); c.lineTo(0, 20); c.lineTo(-12, 15); c.lineTo(-24, 18);
-    c.lineTo(-26, -2); c.lineTo(-15, -13);
-    c.closePath(); c.fill(); c.stroke();
+    // [Type 1: POWER - 3D 중장갑 드레드노트]
+    drawMechThruster(c, -9, 17, 5.5, baseLen + 3, "#ff5500", "#ff0022", curTime);
+    drawMechThruster(c, 9, 17, 5.5, baseLen + 3, "#ff5500", "#ff0022", curTime);
 
-    c.fillStyle = "#334155";
-    c.fillRect(-17, -22, 4.5, 18); c.fillRect(12.5, -22, 4.5, 18);
-    c.strokeStyle = "#ff4466"; c.lineWidth = 1;
-    c.strokeRect(-17, -22, 4.5, 18); c.strokeRect(12.5, -22, 4.5, 18);
+    // 대구경 트윈 레일건 포신 (반동 모션)
+    const recoil = Math.abs(Math.sin(curTime * 8)) * 2.5;
+    [-17, 17].forEach(gx => {
+      c.fillStyle = "#334155"; c.strokeStyle = "#94a3b8"; c.lineWidth = 1.0;
+      c.fillRect(gx - 3, -27 + recoil, 6, 20);
+      c.strokeRect(gx - 3, -27 + recoil, 6, 20);
+      c.fillStyle = "#ff2244";
+      c.fillRect(gx - 2, -25 + recoil, 4, 4.5);
+    });
 
-    c.fillStyle = "#ff0055";
-    c.fillRect(-16, -20, 2.5, 4); c.fillRect(13.5, -20, 2.5, 4);
+    const bg = c.createLinearGradient(-28, -20, 28, 20);
+    bg.addColorStop(0, "#450a0a"); bg.addColorStop(0.5, "#991b1b"); bg.addColorStop(1, "#450a0a");
+    drawMechPoly(c, [[0,-25],[14,-15],[29,-2],[26,18],[13,15],[0,21],[-13,15],[-26,18],[-29,-2],[-14,-15]], bg, "#ff4466", 1.6);
 
-    c.fillStyle = "#1e0b14";
-    c.beginPath();
-    c.moveTo(0, -18); c.lineTo(9, -7); c.lineTo(9, 9); c.lineTo(0, 14);
-    c.lineTo(-9, 9); c.lineTo(-9, -7);
-    c.closePath(); c.fill();
+    drawMechPoly(c, [[0,-18],[10,-8],[12,10],[0,15],[-12,10],[-10,-8]], "#1f0808", "#f87171", 1.0);
 
-    const reactorGrad = c.createRadialGradient(0, -2, 1, 0, -2, 7);
-    reactorGrad.addColorStop(0, "#ffffff");
-    reactorGrad.addColorStop(0.4, "#ff0055");
-    reactorGrad.addColorStop(0.8, "#550011");
-    reactorGrad.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = reactorGrad;
-    c.beginPath(); c.arc(0, -2, 7, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = "#ffaa00"; c.lineWidth = 1; c.stroke();
+    drawWingMissilePod(c, -25, 13, isMissileFlash, false);
+    drawWingMissilePod(c, 25, 13, isMissileFlash, false);
 
-    drawWingMissilePod(c, -25, 14, isMissileFlash, false);
-    drawWingMissilePod(c, 25, 14, isMissileFlash, false);
+    // 중앙 블랙홀 그라비티 코어 회전
+    c.save();
+    c.translate(0, -1);
+    c.rotate(curTime * 4.0);
+    const rg = c.createRadialGradient(0, 0, 1, 0, 0, 8.5);
+    rg.addColorStop(0, "#000000"); rg.addColorStop(0.5, "#a855f7"); rg.addColorStop(1, "#ff0055");
+    c.fillStyle = rg;
+    c.beginPath(); c.arc(0, 0, 8, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = "#ffffff"; c.lineWidth = 1.1;
+    c.strokeRect(-4.5, -4.5, 9, 9);
+    c.restore();
 
   } else if (type === 2) {
-    const drawFuselage = (fx) => {
-      c.fillStyle = "#071112"; c.strokeStyle = "#00ff77"; c.lineWidth = 1.6;
-      c.beginPath();
-      c.moveTo(fx, -28); c.lineTo(fx + 6, -11); c.lineTo(fx + 7, 13);
-      c.lineTo(fx, 17); c.lineTo(fx - 7, 13); c.lineTo(fx - 6, -11);
-      c.closePath(); c.fill(); c.stroke();
+    // [Type 2: TWIN - 3D 테슬라 인터셉터]
+    drawMechThruster(c, -13, 16, 4.2, baseLen, "#00ff88", "#00f5ff", curTime);
+    drawMechThruster(c, 13, 16, 4.2, baseLen, "#00ff88", "#00f5ff", curTime);
 
-      c.fillStyle = "#112622";
-      c.fillRect(fx - 3.5, -14, 7, 20);
+    // 중앙 연결 브릿지 & 아크 발전기
+    c.fillStyle = "#1e293b"; c.strokeStyle = "#38bdf8"; c.lineWidth = 1.1;
+    c.fillRect(-11, -7, 22, 16);
+    c.strokeRect(-11, -7, 22, 16);
 
-      c.fillStyle = "#ffffff";
-      c.fillRect(fx - 1.5, -27, 3, 6);
-      c.fillStyle = "#00ffaa";
-      c.fillRect(fx - 2, -18, 4, 3);
-    };
+    [-13, 13].forEach(fx => {
+      const fg = c.createLinearGradient(fx - 7, 0, fx + 7, 0);
+      fg.addColorStop(0, "#064e3b"); fg.addColorStop(0.5, "#10b981"); fg.addColorStop(1, "#064e3b");
+      drawMechPoly(c, [[fx,-30],[fx+6.5,-11],[fx+13,8],[fx+7.5,16],[fx,18],[fx-7.5,16],[fx-13,8],[fx-6.5,-11]], fg, "#6ee7b7", 1.3);
+      drawMechPoly(c, [[fx,-17],[fx+3,-6],[fx,5],[fx-3,-6]], "#022c22", "#00f5ff", 0.9);
+    });
 
-    drawFuselage(-12);
-    drawFuselage(12);
+    drawWingMissilePod(c, -21, 10, isMissileFlash, false);
+    drawWingMissilePod(c, 21, 10, isMissileFlash, false);
 
-    c.fillStyle = "#131e2b";
-    c.fillRect(-7, -4, 14, 15);
-    c.strokeStyle = "#00f5ff";
-    c.lineWidth = 1;
-    c.strokeRect(-7, -4, 14, 15);
-
-    c.strokeStyle = "rgba(0, 255, 136, 0.6)";
-    c.lineWidth = 1.2;
+    // 중앙 테슬라 코어 & 기수 아크 방전
+    c.fillStyle = "#00f5ff";
+    c.beginPath(); c.arc(0, 1, 4.5, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = "#ffffff"; c.lineWidth = 1.1;
     c.beginPath();
-    c.moveTo(-19, 6); c.lineTo(-24, 15);
-    c.moveTo(19, 6); c.lineTo(24, 15);
+    c.moveTo(-13, -27);
+    c.lineTo(-4, -25 + Math.sin(curTime * 30) * 2.5);
+    c.lineTo(4, -25 - Math.sin(curTime * 30) * 2.5);
+    c.lineTo(13, -27);
     c.stroke();
-
-    drawWingMissilePod(c, -19, 9, isMissileFlash, false);
-    drawWingMissilePod(c, 19, 9, isMissileFlash, false);
 
   } else if (type === 4) {
-    c.fillStyle = "#1c1404"; c.strokeStyle = "#ffd700"; c.lineWidth = 2.2;
-    c.beginPath();
-    c.moveTo(0, -30); c.lineTo(11, -15); c.lineTo(29, 6); c.lineTo(20, 20);
-    c.lineTo(9, 13); c.lineTo(0, 22); c.lineTo(-9, 13); c.lineTo(-20, 20);
-    c.lineTo(-29, 6); c.lineTo(-11, -15);
-    c.closePath(); c.fill(); c.stroke();
+    // [Type 4: LEGEND - 3D 발키리 프라임]
+    drawMechThruster(c, -11, 16, 3.8, baseLen - 2, "#ffe600", "#ff8800", curTime);
+    drawMechThruster(c, 0, 18, 5.5, baseLen + 5, "#ffffff", "#ffe600", curTime);
+    drawMechThruster(c, 11, 16, 3.8, baseLen - 2, "#ffe600", "#ff8800", curTime);
 
-    c.fillStyle = "#3a2a07";
-    c.beginPath();
-    c.moveTo(0, -22); c.lineTo(9, -9); c.lineTo(19, 9); c.lineTo(7, 10);
-    c.lineTo(0, 16); c.lineTo(-7, 10); c.lineTo(-19, 9); c.lineTo(-9, -9);
-    c.closePath(); c.fill();
+    const gg = c.createLinearGradient(-32, -10, 32, 20);
+    gg.addColorStop(0, "#b45309"); gg.addColorStop(0.5, "#fde047"); gg.addColorStop(1, "#b45309");
+    drawMechPoly(c, [[0,-23],[13,-11],[33,4],[26,19],[13,13],[0,22],[-13,13],[-26,19],[-33,4],[-13,-11]], gg, "#fef08a", 1.4);
 
-    c.strokeStyle = "#fff275"; c.lineWidth = 1.0;
-    c.beginPath();
-    c.moveTo(11, -13); c.lineTo(27, 5);
-    c.moveTo(-11, -13); c.lineTo(-27, 5);
-    c.stroke();
+    drawWingMissilePod(c, -28, 8, isMissileFlash, false);
+    drawWingMissilePod(c, 28, 8, isMissileFlash, false);
 
-    const coreG = c.createRadialGradient(0, 1, 1, 0, 1, 9);
-    coreG.addColorStop(0, "#ffffff");
-    coreG.addColorStop(0.3, "#ffe600");
-    coreG.addColorStop(0.8, "#b38600");
-    coreG.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = coreG;
-    c.beginPath();
-    c.moveTo(0, -13); c.lineTo(7, 0); c.lineTo(0, 11); c.lineTo(-7, 0);
-    c.closePath(); c.fill();
-    c.strokeStyle = "#ffffff"; c.lineWidth = 1.2; c.stroke();
+    // 화이트 티타늄 메인 바디
+    drawMechPoly(c, [[0,-32],[8.5,-15],[17,8],[7.5,15],[0,21],[-7.5,15],[-17,8],[-8.5,-15]], "#f8fafc", "#eab308", 1.5);
 
-    c.fillStyle = "#ffd700";
-    c.fillRect(-2, -28, 4, 3);
-    c.fillRect(-7, -19, 2.5, 3);
-    c.fillRect(4.5, -19, 2.5, 3);
-
-    drawWingMissilePod(c, -28, 7, isMissileFlash, false);
-    drawWingMissilePod(c, 28, 7, isMissileFlash, false);
+    // 다이아몬드 솔라 코어
+    drawMechPoly(c, [[0,-14],[6.5,-1],[0,11],[-6.5,-1]], "#0284c7", "#ffffff", 1.2);
+    c.fillStyle = "#e0f2fe";
+    c.beginPath(); c.arc(0, -2, 2.8, 0, Math.PI * 2); c.fill();
 
   } else {
-    c.fillStyle = "#0c1220"; c.strokeStyle = "#00f5ff"; c.lineWidth = 1.8;
-    c.beginPath();
-    c.moveTo(0, -26); c.lineTo(20, 12); c.lineTo(0, 6); c.lineTo(-20, 12);
-    c.closePath(); c.fill(); c.stroke();
-
-    c.fillStyle = "#15243d";
-    c.beginPath();
-    c.moveTo(0, -20); c.lineTo(10, 8); c.lineTo(0, 4); c.lineTo(-10, 8);
-    c.closePath(); c.fill();
-
-    const canG = c.createLinearGradient(0, -15, 0, 2);
-    canG.addColorStop(0, "#ffffff");
-    canG.addColorStop(0.5, "#00f5ff");
-    canG.addColorStop(1, "#003b5c");
-    c.fillStyle = canG;
-    c.beginPath();
-    c.moveTo(0, -17); c.lineTo(4, -6); c.lineTo(0, 1); c.lineTo(-4, -6);
-    c.closePath(); c.fill();
-
-    c.fillStyle = "#000000";
-    c.fillRect(-7, 1, 3, 5); c.fillRect(4, 1, 3, 5);
-
+    // 기본 폴백 기체
+    drawMechThruster(c, -6, 14, 4.5, baseLen, "#00f5ff", "#0066ff", curTime);
+    drawMechThruster(c, 6, 14, 4.5, baseLen, "#00f5ff", "#0066ff", curTime);
+    drawMechPoly(c, [[0,-26],[20,12],[0,6],[-20,12]], "#1e293b", "#00f5ff", 1.6);
     drawWingMissilePod(c, -19, 12, isMissileFlash, false);
     drawWingMissilePod(c, 19, 12, isMissileFlash, false);
   }
 
-  c.fillStyle = "#ffffff";
-  c.fillRect(-23, 7, 2, 2);
-  c.fillRect(21, 7, 2, 2);
-
   c.restore();
 }
+
 function drawVectorRegularEnemy(c, subType) {
   c.save();
   c.lineJoin = "round";
   c.lineCap = "round";
+  const curTime = performance.now() / 1000;
 
-  if (subType === 0) {
-    c.fillStyle = "#060914"; c.strokeStyle = "#00f5ff"; c.lineWidth = 1.8;
-    c.beginPath();
-    c.moveTo(0, 26); c.lineTo(22, -10); c.lineTo(13, -7); c.lineTo(0, -18); c.lineTo(-13, -7); c.lineTo(-22, -10);
-    c.closePath(); c.fill(); c.stroke();
+  // subType별 바이오닉 메카 컬러 테마 (4종 구분 유지)
+  const themes = [
+    { c1: "#1e1b4b", c2: "#3b0764", bdr: "#c084fc", inner: "#38bdf8", thr: "#ff0055" },
+    { c1: "#3b0a0a", c2: "#7f1d1d", bdr: "#f87171", inner: "#fbbf24", thr: "#ff7700" },
+    { c1: "#042f2e", c2: "#115e59", bdr: "#2dd4bf", inner: "#a7f3d0", thr: "#00ffaa" },
+    { c1: "#3b0764", c2: "#701a75", bdr: "#f472b6", inner: "#00f5ff", thr: "#d946ef" }
+  ];
+  const th = themes[(subType || 0) % 4];
 
-    c.fillStyle = "#0f1c30";
-    c.beginPath();
-    c.moveTo(0, 19); c.lineTo(15, -5); c.lineTo(6, -3); c.lineTo(0, -10); c.lineTo(-6, -3); c.lineTo(-15, -5);
-    c.closePath(); c.fill();
+  // 상단 역방향 이온 부스터 2기
+  drawMechThruster(c, -8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
+  drawMechThruster(c, 8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
 
-    c.fillStyle = "#00f5ff";
-    c.fillRect(-11, 4, 3, 9); c.fillRect(8, 4, 3, 9);
-    c.fillStyle = "#ffffff";
-    c.fillRect(-10, 6, 1, 5); c.fillRect(9, 6, 1, 5);
+  // 입체 외계 바이오닉 장갑
+  const eg = c.createLinearGradient(-24, 0, 24, 0);
+  eg.addColorStop(0, th.c1); eg.addColorStop(0.5, th.c2); eg.addColorStop(1, th.c1);
 
-    c.fillStyle = "#ff0055";
-    c.beginPath(); c.arc(0, 16, 2.5, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = "#ffffff"; c.lineWidth = 0.8; c.stroke();
-
-    c.strokeStyle = "rgba(0, 245, 255, 0.6)"; c.lineWidth = 1.0;
-    c.beginPath();
-    c.moveTo(-18, -8); c.lineTo(-14, -14);
-    c.moveTo(18, -8); c.lineTo(14, -14);
-    c.stroke();
-
-  } else if (subType === 1) {
-    c.fillStyle = "#150606"; c.strokeStyle = "#ff3b00"; c.lineWidth = 2.0;
-    c.beginPath();
-    c.moveTo(0, 25); c.lineTo(14, 11); c.lineTo(24, 4); c.lineTo(18, -15); c.lineTo(0, -8); c.lineTo(-18, -15); c.lineTo(-24, 4); c.lineTo(-14, 11);
-    c.closePath(); c.fill(); c.stroke();
-
-    c.fillStyle = "#2c0e0b";
-    c.beginPath();
-    c.moveTo(0, 17); c.lineTo(10, 7); c.lineTo(15, -5); c.lineTo(0, -2); c.lineTo(-15, -5); c.lineTo(-10, 7);
-    c.closePath(); c.fill();
-
-    c.fillStyle = "#475569";
-    c.fillRect(-16, -5, 4, 13); c.fillRect(12, -5, 4, 13);
-    c.strokeStyle = "#ff7700"; c.lineWidth = 1;
-    c.strokeRect(-16, -5, 4, 13); c.strokeRect(12, -5, 4, 13);
-
-    const cg1 = c.createRadialGradient(0, -1, 1, 0, -1, 6);
-    cg1.addColorStop(0, "#ffffff");
-    cg1.addColorStop(0.4, "#ffff00");
-    cg1.addColorStop(0.8, "#ff3300");
-    cg1.addColorStop(1, "rgba(255, 51, 0, 0)");
-    c.fillStyle = cg1;
-    c.beginPath(); c.arc(0, -1, 6, 0, Math.PI * 2); c.fill();
-
-    c.strokeStyle = "#ffffff"; c.lineWidth = 1.0;
-    c.beginPath(); c.moveTo(0, 23); c.lineTo(0, 12); c.stroke();
-
-  } else if (subType === 2) {
-    c.fillStyle = "#081313"; c.strokeStyle = "#00ffaa"; c.lineWidth = 2.0;
-    c.beginPath();
-    c.moveTo(0, 26); c.lineTo(20, 11); c.lineTo(20, -9); c.lineTo(0, -24); c.lineTo(-20, -9); c.lineTo(-20, 11);
-    c.closePath(); c.fill(); c.stroke();
-
-    c.fillStyle = "#102322";
-    c.beginPath();
-    c.moveTo(0, 18); c.lineTo(13, 8); c.lineTo(13, -6); c.lineTo(0, -16); c.lineTo(-13, -6); c.lineTo(-13, 8);
-    c.closePath(); c.fill();
-
-    c.fillStyle = "#1e3a35";
-    c.fillRect(-17, -7, 4, 12); c.fillRect(13, -7, 4, 12);
-    c.strokeStyle = "#00ffcc"; c.lineWidth = 0.8;
-    c.strokeRect(-17, -7, 4, 12); c.strokeRect(13, -7, 4, 12);
-
-    const cg2 = c.createRadialGradient(0, 1, 1, 0, 1, 5.5);
-    cg2.addColorStop(0, "#ffffff");
-    cg2.addColorStop(0.5, "#00ffaa");
-    cg2.addColorStop(1, "rgba(0, 255, 170, 0)");
-    c.fillStyle = cg2;
-    c.beginPath(); c.arc(0, 1, 5.5, 0, Math.PI * 2); c.fill();
-
-    c.strokeStyle = "rgba(0, 255, 170, 0.7)"; c.lineWidth = 1.0;
-    c.beginPath();
-    c.moveTo(-16, 5); c.lineTo(-8, 12);
-    c.moveTo(16, 5); c.lineTo(8, 12);
-    c.stroke();
-
+  if (subType % 2 === 0) {
+    drawMechPoly(c, [[0,26],[10,13],[25,-4],[19,-17],[9,-11],[0,-19],[-9,-11],[-19,-17],[-25,-4],[-10,13]], eg, th.bdr, 1.5);
   } else {
-    c.fillStyle = "#130718"; c.strokeStyle = "#d946ef"; c.lineWidth = 1.8;
-    c.beginPath();
-    c.moveTo(0, 26); c.lineTo(9, 12); c.lineTo(25, 19); c.lineTo(17, -15); c.lineTo(0, -7); c.lineTo(-17, -15); c.lineTo(-25, 19); c.lineTo(-9, 12);
-    c.closePath(); c.fill(); c.stroke();
-
-    c.fillStyle = "#250f2e";
-    c.beginPath();
-    c.moveTo(0, 17); c.lineTo(7, 7); c.lineTo(16, 12); c.lineTo(11, -7); c.lineTo(0, -1); c.lineTo(-11, -7); c.lineTo(-16, 12); c.lineTo(-7, 7);
-    c.closePath(); c.fill();
-
-    c.strokeStyle = "#00f5ff"; c.lineWidth = 1.4;
-    c.beginPath();
-    c.moveTo(23, 16); c.lineTo(17, -13);
-    c.moveTo(-23, 16); c.lineTo(-17, -13);
-    c.stroke();
-
-    c.fillStyle = "#ff007f";
-    c.beginPath();
-    c.moveTo(0, 1); c.lineTo(3.5, 5.5); c.lineTo(0, 10); c.lineTo(-3.5, 5.5);
-    c.closePath(); c.fill();
-    c.strokeStyle = "#ffffff"; c.lineWidth = 0.9; c.stroke();
+    drawMechPoly(c, [[0,26],[14,10],[25,3],[18,-16],[0,-9],[-18,-16],[-25,3],[-14,10]], eg, th.bdr, 1.5);
   }
+
+  // 내부 코어 장갑판
+  drawMechPoly(c, [[0,19],[7.5,6],[13,-6],[0,-11],[-13,-6],[-7.5,6]], "#0f172a", th.inner, 1.0);
+
+  // 좌우로 스캔하는 붉은 모노아이 센서
+  const eyeX = Math.sin(curTime * 5.0 + subType) * 2.2;
+  c.fillStyle = "#ff0044";
+  c.beginPath(); c.arc(eyeX, 7.5, 3.0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#ffffff";
+  c.beginPath(); c.arc(eyeX, 7.5, 1.1, 0, Math.PI * 2); c.fill();
 
   c.restore();
 }
+
 const ROCK_PALETTES = [
-  { fill: "#8c9ba5", stroke: "#e2e8f0" },
-  { fill: "#9ca3af", stroke: "#f1f5f9" },
-  { fill: "#a1a1aa", stroke: "#e4e4e7" },
-  { fill: "#94a3b8", stroke: "#cbd5e1" },
-  { fill: "#a3a3a3", stroke: "#f5f5f5" }
+  { top: "#64748b", mid: "#475569", bot: "#1e293b", stroke: "#cbd5e1", magma: "#ffaa00" },
+  { top: "#78716c", mid: "#57534e", bot: "#292524", stroke: "#e7e5e4", magma: "#ff5500" },
+  { top: "#6b7280", mid: "#4b5563", bot: "#1f2937", stroke: "#e5e7eb", magma: "#00f5ff" },
+  { top: "#71717a", mid: "#52525b", bot: "#27272a", stroke: "#f4f4f5", magma: "#f43f5e" },
+  { top: "#64748b", mid: "#334155", bot: "#0f172a", stroke: "#94a3b8", magma: "#eab308" }
 ];
 
 function drawVectorEliteAsteroid(c, rockId, rotDir, colorIdx, curTime) {
   c.save();
 
-  const dustGrad = c.createRadialGradient(0, 0, 18, 0, 0, 36);
-  dustGrad.addColorStop(0, "rgba(180, 200, 220, 0.28)");
-  dustGrad.addColorStop(0.5, "rgba(148, 163, 184, 0.14)");
-  dustGrad.addColorStop(1, "rgba(100, 116, 139, 0)");
+  // 열기/먼지 오라
+  const dustGrad = c.createRadialGradient(0, 0, 12, 0, 0, 34);
+  dustGrad.addColorStop(0, "rgba(255, 120, 30, 0.22)");
+  dustGrad.addColorStop(0.55, "rgba(148, 163, 184, 0.12)");
+  dustGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
   c.fillStyle = dustGrad;
-  c.beginPath();
-  c.arc(0, 0, 36, 0, Math.PI * 2);
-  c.fill();
+  c.beginPath(); c.arc(0, 0, 34, 0, Math.PI * 2); c.fill();
 
-  const rotAngle = (curTime * ((Math.PI * 2) / 2.14)) * (rotDir || 1);
+  const th = ROCK_PALETTES[(colorIdx || 0) % ROCK_PALETTES.length];
+
+  c.save();
+  const rotAngle = (curTime * ((Math.PI * 2) / 2.4)) * (rotDir || 1);
   c.rotate(rotAngle);
-  c.scale(0.6, 0.6);
+  c.scale(0.46, 0.46); // 기존 충돌 반경(radius = 18)에 정확히 일치하도록 스케일 맞춤
 
-  const theme = ROCK_PALETTES[(colorIdx || 0) % ROCK_PALETTES.length];
-  c.fillStyle = theme.fill;
-  c.strokeStyle = theme.stroke;
-  c.lineWidth = 3.5;
+  // 외곽 9각형 베이스 암석
+  const outer = [[0,-46],[25,-36],[42,-13],[38,17],[21,40],[-9,44],[-36,28],[-44,-4],[-30,-32]];
+  drawMechPoly(c, outer, th.mid, th.stroke, 3.0);
 
-  const shapeMode = (rockId || 0) % 5;
+  // 3D 다면체 명암 분할 (Faceted 3D Shading)
+  drawMechPoly(c, [[0,-46],[25,-36],[8,-8],[-12,-18]], th.top, null);
+  drawMechPoly(c, [[25,-36],[42,-13],[17,10],[8,-8]], th.mid, null);
+  drawMechPoly(c, [[38,17],[21,40],[-9,44],[-6,12],[17,10]], th.bot, null);
+  drawMechPoly(c, [[-9,44],[-36,28],[-44,-4],[-15,4],[-6,12]], "#090d16", null);
+
+  // 내부 마그마 균열 발광
+  c.strokeStyle = th.magma;
+  c.lineWidth = 2.4;
   c.beginPath();
+  c.moveTo(-20, -15); c.lineTo(-3, -2); c.lineTo(18, -11);
+  c.moveTo(-3, -2); c.lineTo(6, 22);
+  c.moveTo(-3, -2); c.lineTo(-18, 16);
+  c.stroke();
 
-  if (shapeMode === 0) {
-    const offsets0 = [36, 26, 38, 22, 35, 25, 37, 21, 34, 27, 36, 23];
-    for (let i = 0; i < 12; i++) {
-      const a = (i * Math.PI) / 6;
-      const rOuter = offsets0[i];
-      const x = Math.cos(a) * rOuter;
-      const y = Math.sin(a) * rOuter;
-      if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-    }
-  } else if (shapeMode === 1) {
-    const pts1 = [[0, -39], [10, -28], [22, -22], [18, -6], [29, 6], [21, 24], [8, 31], [-5, 37], [-19, 25], [-27, 11], [-18, -4], [-23, -20], [-10, -31]];
-    c.moveTo(pts1[0][0], pts1[0][1]);
-    for (let i = 1; i < pts1.length; i++) c.lineTo(pts1[i][0], pts1[i][1]);
-  } else if (shapeMode === 2) {
-    const pts2 = [[-4, -36], [14, -31], [24, -20], [33, -4], [25, 14], [22, 29], [4, 35], [-14, 32], [-27, 21], [-35, 5], [-31, -14], [-17, -29]];
-    c.moveTo(pts2[0][0], pts2[0][1]);
-    for (let i = 1; i < pts2.length; i++) c.lineTo(pts2[i][0], pts2[i][1]);
-  } else if (shapeMode === 3) {
-    const pts3 = [[0, -37], [16, -25], [29, -10], [33, 9], [17, 23], [-2, 36], [-17, 27], [-29, 13], [-22, -3], [-32, -18], [-14, -28]];
-    c.moveTo(pts3[0][0], pts3[0][1]);
-    for (let i = 1; i < pts3.length; i++) c.lineTo(pts3[i][0], pts3[i][1]);
-  } else {
-    const pts4 = [[-12, -36], [6, -34], [24, -23], [35, -4], [31, 16], [16, 31], [-3, 35], [-21, 27], [-33, 15], [-35, -8], [-23, -24]];
-    c.moveTo(pts4[0][0], pts4[0][1]);
-    for (let i = 1; i < pts4.length; i++) c.lineTo(pts4[i][0], pts4[i][1]);
+  // 입체 크레이터 3개
+  const craters = [[-15,-19,6.5],[19,13,7.5],[-17,20,5.0]];
+  for (let i = 0; i < craters.length; i++) {
+    const cr = craters[i];
+    c.fillStyle = "#090d16";
+    c.beginPath(); c.arc(cr[0], cr[1], cr[2], 0, Math.PI * 2); c.fill();
+    c.strokeStyle = th.top; c.lineWidth = 1.4; c.stroke();
   }
+  c.restore();
 
-  c.closePath();
-  c.fill();
-  c.stroke();
-
-  // 발광 에너지 크랙 (지열선)
-  c.strokeStyle = "#00f5ff";
-  c.lineWidth = 1.2;
-  c.beginPath();
-  c.moveTo(-15, -10); c.lineTo(-2, 4); c.lineTo(12, -8);
-  c.moveTo(-2, 4); c.lineTo(5, 20);
-  c.stroke();
-
-  // 입체 질감 3D 크레이터
-  const crPos = [
-    { x: -8, y: -12, r: 6.0 },
-    { x: 12, y: 10, r: 5.0 },
-    { x: -14, y: 12, r: 4.2 }
-  ];
-  crPos.forEach(cr => {
-    c.fillStyle = "#1e293b";
-    c.beginPath(); c.arc(cr.x, cr.y, cr.r, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = "#94a3b8";
-    c.lineWidth = 1.2;
-    c.stroke();
-    c.fillStyle = "#0f172a";
-    c.beginPath(); c.arc(cr.x - 1, cr.y - 1, cr.r * 0.45, 0, Math.PI * 2); c.fill();
-  });
+  // 주변을 공전하는 미니 위성 파편 3개
+  for (let i = 0; i < 3; i++) {
+    const a = -curTime * 2.2 + i * ((Math.PI * 2) / 3);
+    const rx = Math.cos(a) * 26;
+    const ry = Math.sin(a) * 26;
+    c.fillStyle = th.stroke;
+    c.beginPath(); c.arc(rx, ry, 2.2, 0, Math.PI * 2); c.fill();
+  }
 
   c.restore();
 }
@@ -1111,39 +975,35 @@ function drawVectorBoss(c, curTime) {
   c.save();
   c.scale(1.02, 1.02);
   c.lineJoin = "round";
+  c.lineCap = "round";
 
-  c.fillStyle = "rgba(0, 245, 255, 0.28)";
-  c.beginPath();
-  c.moveTo(-28, 20); c.lineTo(-65, 35); c.lineTo(-58, -25); c.lineTo(-26, -15);
-  c.closePath(); c.fill();
-  c.beginPath();
-  c.moveTo(28, 20); c.lineTo(65, 35); c.lineTo(58, -25); c.lineTo(26, -15);
-  c.closePath(); c.fill();
+  // 후방 4연장 거대 플라즈마 부스터
+  [-36, -14, 14, 36].forEach(bx => {
+    drawMechThruster(c, bx, -34, 4.8, -19, "#ff3300", "#ffaa00", curTime);
+  });
 
-  c.fillStyle = "#120815";
-  c.strokeStyle = "#ff2244";
-  c.lineWidth = 2.6;
-  c.beginPath();
-  c.moveTo(0, 52); c.lineTo(28, 26); c.lineTo(56, 32); c.lineTo(50, -20);
-  c.lineTo(30, -38); c.lineTo(0, -28); c.lineTo(-30, -38); c.lineTo(-50, -20);
-  c.lineTo(-56, 32); c.lineTo(-28, 26);
-  c.closePath(); c.fill(); c.stroke();
+  // 좌우 에너지 포스필드 윙
+  drawMechPoly(c, [[-30,18],[-68,36],[-60,-26],[-28,-16]], "rgba(0, 245, 255, 0.25)", "#00f5ff", 1.5);
+  drawMechPoly(c, [[30,18],[68,36],[60,-26],[28,-16]], "rgba(0, 245, 255, 0.25)", "#00f5ff", 1.5);
 
-  c.fillStyle = "#1c2438";
-  c.strokeStyle = "rgba(255, 255, 255, 0.4)";
-  c.lineWidth = 1.0;
-  c.beginPath();
-  c.moveTo(0, 38); c.lineTo(20, 18); c.lineTo(40, 14); c.lineTo(24, -20);
-  c.lineTo(0, -14); c.lineTo(-24, -20); c.lineTo(-40, 14); c.lineTo(-20, 18);
-  c.closePath(); c.fill(); c.stroke();
+  // 4문 대구경 중포탑
+  [-40, -22, 22, 40].forEach(gx => {
+    c.fillStyle = "#1e293b"; c.strokeStyle = "#f97316"; c.lineWidth = 1.2;
+    c.fillRect(gx - 3.5, 24, 7, 22);
+    c.strokeRect(gx - 3.5, 24, 7, 22);
+    c.fillStyle = "#ffe600";
+    c.fillRect(gx - 2, 42, 4, 4);
+  });
 
-  c.fillStyle = "#475569";
-  c.fillRect(-27, 28, 8, 20); c.fillRect(19, 28, 8, 20);
-  c.strokeStyle = "#ff4400";
-  c.strokeRect(-27, 28, 8, 20); c.strokeRect(19, 28, 8, 20);
-  c.fillStyle = "#ffaa00";
-  c.fillRect(-25, 45, 4, 4); c.fillRect(21, 45, 4, 4);
+  // 메인 다층 장갑 선체
+  const bg = c.createLinearGradient(-55, -35, 55, 50);
+  bg.addColorStop(0, "#1e1b4b"); bg.addColorStop(0.5, "#4c0519"); bg.addColorStop(1, "#0f172a");
+  drawMechPoly(c, [[0,54],[26,30],[58,34],[52,-22],[32,-40],[0,-30],[-32,-40],[-52,-22],[-58,34],[-26,30]], bg, "#ff2244", 2.4);
 
+  // 상부 브릿지 장갑판
+  drawMechPoly(c, [[0,38],[22,18],[38,14],[26,-20],[0,-14],[-26,-20],[-38,14],[-22,18]], "#1e293b", "#94a3b8", 1.2);
+
+  // 중앙 다중 역회전 원자로 코어
   c.save();
   c.rotate(curTime * 2.2);
   c.strokeStyle = "#ffd700"; c.lineWidth = 2.0;
@@ -3908,12 +3768,6 @@ function safeGameLoop(now) {
     const curTime = now / 1000;
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
-
-    // 인게임 실시간 랭킹 백그라운드 동기화 (15초 주기)
-    if (curTime - (window.lastRankSyncTime || 0) > 15.0) {
-      window.lastRankSyncTime = curTime;
-      fetchTop10();
-    }
 
     drawDynamicDeepSpaceBackground(ctx, dt);
 
