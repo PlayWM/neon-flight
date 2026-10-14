@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
   body, html { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background-color: #030308; display: flex; justify-content: center; align-items: center; }
-  #canvas-container { position: relative; aspect-ratio: 450 / 800; width: auto; height: 100%; max-width: 100vw; max-height: 100dvh; display: flex; justify-content: center; align-items: center; }
+  #canvas-container { position: relative; width: min(100vw, calc(100dvh * 450 / 800), 450px); height: min(100dvh, calc(100vw * 800 / 450), 800px); display: flex; justify-content: center; align-items: center; }
   canvas { width: 100%; height: 100%; background: #04040c; touch-action: none; display: block; }
   #name-input-overlay { display: none; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 260px; z-index: 10; }
   #name-input { width: 100%; height: 38px; background: #0a0f1e; border: 2px solid #00f5ff; border-radius: 6px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; font-size: 14px; text-align: center; outline: none; box-shadow: 0 0 8px rgba(0,245,255,0.4); }
@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261014.03";
+const VERSION_STR = "v20261014.05";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
