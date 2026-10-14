@@ -346,14 +346,18 @@ function fetchTop10() {
 fetchTop10();
 
 let finalSurvivedSec = 0;
+let isSubmittingScore = false; // 중복 등록 방지 잠금 변수
 
 function uploadScore(name, finalScore) {
+  if (isSubmittingScore) return; // 이미 전송 중이면 즉시 차단!
   const cleanName = sanitizeText(name);
   if (!cleanName || cleanName === "Unknown") return;
   const survivedSec = finalSurvivedSec || Math.floor(inGameElapsedTime || 0);
   // 1) 실제 처치 누적 점수(verifiedScore)와 불일치하거나, 2) 생존 시간 대비 비정상 점수면 업로드 차단
   if (finalScore !== verifiedScore || survivedSec < 1) return;
   if (finalScore < 0 || finalScore > survivedSec * 45 + 300) return;
+
+  isSubmittingScore = true; // 잠금 활성화
 
   let shipType = "Random";
   if (player) {
@@ -377,8 +381,13 @@ function uploadScore(name, finalScore) {
         token: sessionSecurityKey,
         time: Date.now() / 1000
       })
-    }).then(() => fetchTop10()).catch(() => {});
-  } catch(e){}
+    }).finally(() => {
+      // 서버 응답이 끝나면 즉시 새로고침
+      location.reload();
+    });
+  } catch(e){
+    location.reload();
+  }
 }
 
 // =================================================================
@@ -3750,19 +3759,18 @@ function handlePointerDown(e) {
     minigameFinishTimestamp = performance.now() / 1000;
     playTone(523, 0.15, "triangle", 0, 0.15);
   } else if (gameState === 3) {
+    if (isSubmittingScore) return; // 이미 버튼을 눌렀다면 추가 터치 무시!
     const popY = LOGICAL_HEIGHT * 0.3;
     const btnRect = { x: LOGICAL_WIDTH / 2 - 90, y: popY + 155, w: 180, h: 42 };
     if (coords.x >= btnRect.x && coords.x <= btnRect.x + btnRect.w && coords.y >= btnRect.y && coords.y <= btnRect.y + btnRect.h) {
       const enteredName = nameInput.value.trim();
-      // 이름 미입력 시 "Player 1" 자동 적용
       const finalName = enteredName.length > 0 ? enteredName : "Player 1";
-      uploadScore(finalName, score);
       nameInputOverlay.style.display = "none";
-
-      // 점수 전송 요청이 완료될 수 있도록 0.3초 여유를 두고 브라우저 완전 새로고침
+      uploadScore(finalName, score);
+      // 혹시라도 네트워크가 끊겨 응답이 안 올 때를 대비한 백업 새로고침(1.5초)
       setTimeout(() => {
         location.reload();
-      }, 300);
+      }, 1500);
     }
   }
 }
