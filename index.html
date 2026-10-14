@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261015.01";
+const VERSION_STR = "v20261015.03";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -858,35 +858,75 @@ function drawVectorRegularEnemy(c, subType) {
   c.lineCap = "round";
   const curTime = performance.now() / 1000;
 
-  // 4가지 종류별 서로 다른 컬러 테마 및 메카닉 실루엣 정의
+  // 10가지 다양한 형태와 고유 컬러 테마를 가진 적 기체 정의
   const enemyTypes = [
     { 
-      // 타입 0: 날렵한 스텔스 인터셉터형 (보라/시안)
+      // 0번: 스텔스 델타 인터셉터 (퍼플/시안)
       c1: "#1e1b4b", c2: "#3b0764", bdr: "#c084fc", inner: "#38bdf8", thr: "#ff0055",
-      pts: [[0,26],[10,13],[25,-4],[19,-17],[9,-11],[0,-19],[-9,-11],[-19,-17],[-25,-4],[-10,13]]
+      pts: [[0,26],[10,13],[25,-4],[19,-17],[9,-11],[0,-19],[-9,-11],[-19,-17],[-25,-4],[-10,13]],
+      bx: 8.5, by: -13
     },
     { 
-      // 타입 1: 전면 돌격형 해비 건쉽 (붉은색/골드)
+      // 1번: 중장갑 돌격 건쉽 (크림슨/골드)
       c1: "#3b0a0a", c2: "#7f1d1d", bdr: "#f87171", inner: "#fbbf24", thr: "#ff7700",
-      pts: [[0,26],[14,10],[25,3],[18,-16],[0,-9],[-18,-16],[-25,3],[-14,10]]
+      pts: [[0,26],[14,10],[25,3],[18,-16],[0,-9],[-18,-16],[-25,3],[-14,10]],
+      bx: 11, by: -12
     },
     { 
-      // 타입 2: 고기동 델타 익스플로러형 (청록/에메랄드)
+      // 2번: 고기동 웨이브 스트라이커 (청록/에메랄드)
       c1: "#042f2e", c2: "#115e59", bdr: "#2dd4bf", inner: "#a7f3d0", thr: "#00ffaa",
-      pts: [[0,28],[18,8],[22,-10],[8,-16],[0,-12],[-8,-16],[-22,-10],[-18,8]]
+      pts: [[0,28],[18,8],[22,-10],[8,-16],[0,-12],[-8,-16],[-22,-10],[-18,8]],
+      bx: 9, by: -14
     },
     { 
-      // 타입 3: 뾰족한 어썰트 스트라이커형 (마젠타/블루)
+      // 3번: 샤프 어썰트 파이터 (마젠타/블루)
       c1: "#3b0764", c2: "#701a75", bdr: "#f472b6", inner: "#00f5ff", thr: "#d946ef",
-      pts: [[0,27],[8,15],[24,-2],[15,-15],[0,-21],[-15,-15],[-24,-2],[-8,15]]
+      pts: [[0,27],[8,15],[24,-2],[15,-15],[0,-21],[-15,-15],[-24,-2],[-8,15]],
+      bx: 7, by: -15
+    },
+    { 
+      // 4번: 트윈혼 헤비거너 (오렌지/옐로우)
+      c1: "#431407", c2: "#9a3412", bdr: "#fb923c", inner: "#fde047", thr: "#00ffcc",
+      pts: [[0,25],[15,18],[22,-2],[12,-12],[0,-24],[-12,-12],[-22,-2],[-15,18]],
+      bx: 10, by: -16
+    },
+    { 
+      // 5번: 엑스윙 스카우트 (딥블루/그린)
+      c1: "#082f49", c2: "#0369a1", bdr: "#38bdf8", inner: "#4ade80", thr: "#ff0055",
+      pts: [[0,24],[22,4],[12,-8],[20,-20],[0,-12],[-20,-20],[-12,-8],[-22,4]],
+      bx: 8, by: -12
+    },
+    { 
+      // 6번: 다이아몬드 코어 인터셉터 (블러드레드/실버)
+      c1: "#4c0519", c2: "#881337", bdr: "#fda4af", inner: "#e2e8f0", thr: "#00ffff",
+      pts: [[0,29],[12,8],[18,-12],[0,-24],[-18,-12],[-12,8]],
+      bx: 6, by: -17
+    },
+    { 
+      // 7번: 스파이크 윙 가디언 (에메랄드/오렌지)
+      c1: "#022c22", c2: "#065f46", bdr: "#34d399", inner: "#fdba74", thr: "#ff3300",
+      pts: [[0,26],[16,12],[28,6],[14,-10],[0,-22],[-14,-10],[-28,6],[-16,12]],
+      bx: 12, by: -14
+    },
+    { 
+      // 8번: 팬텀 레이스 타입 (인디고/핑크)
+      c1: "#311042", c2: "#581c87", bdr: "#e879f9", inner: "#38bdf8", thr: "#ffe600",
+      pts: [[0,25],[11,16],[21,-6],[10,-14],[0,-20],[-10,-14],[-21,-6],[-11,16]],
+      bx: 7, by: -13
+    },
+    { 
+      // 9번: 네오 타이탄 브레이커 (다크슬레이트/레드)
+      c1: "#18181b", c2: "#27272a", bdr: "#a1a1aa", inner: "#f87171", thr: "#00ff55",
+      pts: [[0,28],[19,10],[24,-10],[12,-16],[0,-22],[-12,-16],[-24,-10],[-19,10]],
+      bx: 9, by: -15
     }
   ];
 
   const th = enemyTypes[(subType || 0) % enemyTypes.length];
 
-  // 상단 역방향 이온 부스터 2기
-  drawMechThruster(c, -8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
-  drawMechThruster(c, 8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
+  // 상단 역방향 이온 부스터 2기 (기체별 최적 폭 배치)
+  drawMechThruster(c, -th.bx, th.by, 3.2, -13, th.thr, th.bdr, curTime);
+  drawMechThruster(c, th.bx, th.by, 3.2, -13, th.thr, th.bdr, curTime);
 
   // 3D 입체 외계 바이오닉 메카 장갑
   const eg = c.createLinearGradient(-24, 0, 24, 0);
@@ -897,17 +937,17 @@ function drawVectorRegularEnemy(c, subType) {
   drawMechPoly(c, th.pts, eg, th.bdr, 1.5);
 
   // 내부 고열 코어 및 장갑판
-  drawMechPoly(c, [[0,18],[7,5],[12,-5],[0,-10],[-12,-5],[-7,5]], "#0f172a", th.inner, 1.0);
+  drawMechPoly(c, [[0,16],[6,4],[10,-4],[0,-9],[-10,-4],[-6,4]], "#0f172a", th.inner, 1.0);
 
   // 좌우로 실시간 스캔하는 붉은 모노아이 센서
-  const eyeX = Math.sin(curTime * 5.0 + subType) * 2.2;
+  const eyeX = Math.sin(curTime * 5.0 + subType) * 2.0;
   c.fillStyle = "#ff0044";
   c.beginPath(); 
-  c.arc(eyeX, 6.5, 2.8, 0, Math.PI * 2); 
+  c.arc(eyeX, 5.5, 2.6, 0, Math.PI * 2); 
   c.fill();
   c.fillStyle = "#ffffff";
   c.beginPath(); 
-  c.arc(eyeX, 6.5, 1.0, 0, Math.PI * 2); 
+  c.arc(eyeX, 5.5, 0.9, 0, Math.PI * 2); 
   c.fill();
 
   c.restore();
