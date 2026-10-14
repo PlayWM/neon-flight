@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261014.05";
+const VERSION_STR = "v20261014.08";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1287,26 +1287,17 @@ class Player {
       const isType0 = (this.pType === 0);
       const isLegend = (this.pType === 4 || this.name === "Legend");
 
-      // [기능 3-1 & 3-2] 레전드 비행기 미사일 개수 확장
+      // [밸런스 조정] 레전드 미사일: 기본 2발 -> 파워8 또는 미사일8 달성 시 3발 -> 둘 다 8렙 달성 시 최대 4발
       if (isLegend) {
-        // 기본 2발 -> 파워 8렙 이상이면 50% 증가(3발) -> 미사일 8렙 이상이면 2배 증가(최대 6발)
         const hasPwr8 = this.powerStat >= 8;
         const hasMsl8 = this.missileStat >= 8;
 
         if (hasPwr8 && hasMsl8) {
-          // 총 6발 방사형 발사
-          [-3.0, -1.8, -0.6, 0.6, 1.8, 3.0].forEach((vx, idx) => {
-            const side = idx < 3 ? "LEFT" : "RIGHT";
-            homingMissiles.push(new HomingMissile(this.x + vx * 10, this.y - 6, vx, -7, dmg, side, false));
-          });
-        } else if (hasMsl8) {
-          // 총 4발 발사 (기본 2발의 2배)
           [-2.2, -0.8, 0.8, 2.2].forEach((vx, idx) => {
             const side = idx < 2 ? "LEFT" : "RIGHT";
             homingMissiles.push(new HomingMissile(this.x + vx * 9, this.y - 6, vx, -7, dmg, side, false));
           });
-        } else if (hasPwr8) {
-          // 총 3발 발사 (50% 증가)
+        } else if (hasPwr8 || hasMsl8) {
           homingMissiles.push(new HomingMissile(this.x - 24, this.y - 6, -2.0, -7, dmg, "LEFT", false));
           homingMissiles.push(new HomingMissile(this.x, this.y - 12, 0, -7.5, dmg, "LEFT", false));
           homingMissiles.push(new HomingMissile(this.x + 24, this.y - 6, 2.0, -7, dmg, "RIGHT", false));
@@ -1348,50 +1339,48 @@ class Player {
       playTone(isType0 ? 750 : 550, 0.12, isType0 ? "triangle" : "sine", 200, 0.11);
     }
 
-    if (this.pType === 0) {
+    const isLegendShip = (this.pType === 4 || this.name === "Legend");
+    // 미사일형(0)은 상시 2줄기, 레전드(4)는 미사일 8렙 이상일 때 중앙 1줄기만 지원 발사
+    if (this.pType === 0 || (isLegendShip && this.missileStat >= 8)) {
       this.missileLaserTimer += dt;
-      // Rate 레벨 1당 0.5초 기본 주기에서 2%씩 단축 (최소 0.08초 가드)
-      const laserInterval = Math.max(0.08, 0.5 * Math.pow(0.98, Math.max(0, this.fireRateStat - 1)));
+      const baseLaserInt = isLegendShip ? 0.85 : 0.5; // 레전드는 발사 주기를 0.85초로 완만하게
+      const laserInterval = Math.max(0.12, baseLaserInt * Math.pow(0.98, Math.max(0, this.fireRateStat - 1)));
       if (this.missileLaserTimer >= laserInterval) {
         this.missileLaserTimer = 0;
-        // [항목 4] 1렙 파워 지금 대비 40% 감소 (0.5 -> 0.3)
         const lDmg = Math.max(0.6, this.getMissileDamage() * 0.3);
 
-        // [항목 3] 왼쪽 머리는 LEFT 타겟 전용, 오른쪽 머리는 RIGHT 타겟 전용 발사
-        stationaryLasers.push(new StationaryMissileLaser(this.x - 10, this.y - 26, lDmg, this.missileStat, 0, "LEFT"));
-        stationaryLasers.push(new StationaryMissileLaser(this.x + 10, this.y - 26, lDmg, this.missileStat, 0, "RIGHT"));
-
-        if (this.clonePlaneTimer > 0) {
-          stationaryLasers.push(new StationaryMissileLaser(this.x + 42 - 10, this.y - 26, lDmg, this.missileStat, 0, "LEFT"));
-          stationaryLasers.push(new StationaryMissileLaser(this.x + 42 + 10, this.y - 26, lDmg, this.missileStat, 0, "RIGHT"));
+        if (isLegendShip) {
+          const sideToggle = (Math.random() < 0.5) ? "LEFT" : "RIGHT";
+          stationaryLasers.push(new StationaryMissileLaser(this.x, this.y - 28, lDmg, this.missileStat, 0, sideToggle));
+        } else {
+          stationaryLasers.push(new StationaryMissileLaser(this.x - 10, this.y - 26, lDmg, this.missileStat, 0, "LEFT"));
+          stationaryLasers.push(new StationaryMissileLaser(this.x + 10, this.y - 26, lDmg, this.missileStat, 0, "RIGHT"));
+          if (this.clonePlaneTimer > 0) {
+            stationaryLasers.push(new StationaryMissileLaser(this.x + 42 - 10, this.y - 26, lDmg, this.missileStat, 0, "LEFT"));
+            stationaryLasers.push(new StationaryMissileLaser(this.x + 42 + 10, this.y - 26, lDmg, this.missileStat, 0, "RIGHT"));
+          }
         }
         playTone(740, 0.15, "triangle", -200, 0.1);
       }
     }
 
-    // [기능 3-3] 트윈형 또는 레전드 비행기의 발사속도가 8렙 이상일 때 전자기 펄스 충전 및 방출
-    const canUseEmp = (this.pType === 2 || this.getDominantTrait() === "RATE" || ((this.pType === 4 || this.name === "Legend") && this.fireRateStat >= 8));
+    const isLegendEmp = (this.pType === 4 || this.name === "Legend");
+    const canUseEmp = (this.pType === 2 || (isLegendEmp && this.fireRateStat >= 8));
     if (canUseEmp && this.fireRateStat >= 8) {
       this.lightningTimer += dt;
       const isLv16 = (this.fireRateStat >= 16);
-      const fovMult = isLv16 ? 1.4 : 1.0;
+      const empCooldown = isLegendEmp ? 3.5 : 2.0; // 레전드는 3.5초마다 1회로 제한 (오버스펙 방지)
 
-      // 충전 타이머 누적
-      if (this.lightningTimer < 2.5) {
-        this.twinEmpChargingTimer = this.lightningTimer / 2.5;
-      } else {
-        this.twinEmpChargingTimer = 0; // 발사 후 기두부 원형 펄스 리셋
-      }
+      this.twinEmpChargingTimer = Math.min(1.0, this.lightningTimer / empCooldown);
 
-      // [트윈 8렙 전자기 구체] 예전 초기 원본 타이머 복원: 발동 주기 2.0초, 화면 노출 1.8초
-      if (this.lightningTimer >= 2.0) {
+      if (this.lightningTimer >= empCooldown) {
         this.lightningTimer = 0;
         this.twinEmpChargingTimer = 0;
 
-        // 트윈 비행기 폭 44px 기준: 8렙 지름 3배(132px, 반경 66px), 16렙 지름 4배(176px, 반경 88px)
         const shipWidth = 44;
         const targetDiameter = isLv16 ? (shipWidth * 4) : (shipWidth * 3);
-        const baseR = targetDiameter / 2;
+        // 레전드는 전자기 구체 크기를 트윈 기체의 70%로 축소
+        const baseR = (targetDiameter / 2) * (isLegendEmp ? 0.70 : 1.0);
 
         // 내 비행기 높이(56px)의 4~5배 범위(224px ~ 280px) 사이 랜덤 위치 생성
         const shipHeight = 56;
@@ -1439,10 +1428,13 @@ class Player {
   _fire(px, py, dmg, bullets) {
     if (this.pType === 0) return;
 
-    let isBlackHoleShot = (this.pType === 1 && this.shotCount % 5 === 0);
+    const isLegend = (this.name === "Legend" || this.pType === 4);
+    // 파워형은 5발마다, 레전드는 파워 8렙 이상일 때 12발마다 1번씩만 블랙홀 발사
+    let isBlackHoleShot = (this.pType === 1 && this.shotCount % 5 === 0) ||
+                          (isLegend && this.powerStat >= 8 && this.shotCount % 12 === 0);
 
-    if (this.name === "Legend" || this.pType === 4) {
-      bullets.push(new Bullet(px, py - 22, 0, -22, dmg, 4.5, "LEGEND"));
+    if (isLegend) {
+      bullets.push(new Bullet(px, py - 22, 0, -22, dmg, isBlackHoleShot ? 7.5 : 4.5, isBlackHoleShot ? "BLACK_HOLE" : "LEGEND", isBlackHoleShot));
       bullets.push(new Bullet(px, py - 22, -1.0, -17, dmg, 4.5, "LEGEND"));
       bullets.push(new Bullet(px, py - 22, 1.0, -17, dmg, 4.5, "LEGEND"));
       playTone(900, 0.08, "triangle", -400, 0.1);
@@ -1485,9 +1477,12 @@ shoot(curTime, bullets) {
       this.lastShot = curTime;
       this.shotCount++;
       let baseDmg = Math.max(1, this.powerStat || 1);
+      const isLegend = (this.pType === 4 || this.name === "Legend");
       if (this.pType === 1) baseDmg = 1 + (this.powerStat - 1) * 2.2;
-      // 레전드 비행기 데미지 20% 축소 (0.84 * 0.8 = 0.672)
-      const dmgMultiplier = (this.pType === 4 || this.name === "Legend") ? 0.672 : 2.0;
+      else if (isLegend) baseDmg = 1 + (this.powerStat - 1) * 1.35; // 파워 레벨당 성장치 적정화
+
+      // 3갈래 탄환 + 보조 스킬 합산 시 일반 기체 대비 평균 +20% 화력이 되도록 0.95 배율 적용
+      const dmgMultiplier = isLegend ? 0.95 : 2.0;
       const dmg = baseDmg * dmgMultiplier;
       this._fire(this.x, this.y, dmg, bullets);
       if (this.clonePlaneTimer > 0) this._fire(this.x + 42, this.y, dmg, bullets);
