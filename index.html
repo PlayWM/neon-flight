@@ -280,67 +280,73 @@ let dailyPlayCounts5 = []; // 최근 5일 데이터 저장 배열
 
 function fetchTop10() {
   try {
-    // 전체 DB 다운로드 방지: 상위 100건만 쿼리하여 트래픽 폭탄 방어
-    fetch(FIREBASE_URL + `?orderBy="score"&limitToLast=100`)
-      .then(r => r.json())
-      .then(data => {
-        if (data && typeof data === "object") {
-          const rawItems = Object.values(data).filter(v => v && typeof v === "object" && v.score !== undefined);
+    // 1. 최근 7일 시작 타임스탬프 계산 (여유 있게 8일 전 기준)
+    const sevenDaysAgoSec = Math.floor(Date.now() / 1000) - (8 * 86400);
 
-          // 1. 최근 5일 일일 플레이 횟수 집계
-          const now = new Date();
-          const getDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          const getLabel = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    // 2. [랭킹용 상위 200개] + [최근 7일 플레이 기록 전체] 동시 조회
+    Promise.all([
+      fetch(FIREBASE_URL + `?orderBy="score"&limitToLast=200`).then(r => r.json()),
+      fetch(FIREBASE_URL + `?orderBy="time"&startAt=${sevenDaysAgoSec}`).then(r => r.json())
+    ]).then(([rankData, recentData]) => {
+      // (A) 최근 7일 일일 플레이 횟수 100% 정확히 집계
+      if (recentData && typeof recentData === "object") {
+        const recentItems = Object.values(recentData).filter(v => v && typeof v === "object");
+        const now = new Date();
+        const getDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const getLabel = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 
-          const temp7 = [];
-          for (let i = 6; i >= 0; i--) {
-            const targetD = new Date(now);
-            targetD.setDate(targetD.getDate() - i);
-            temp7.push({
-              key: getDayKey(targetD),
-              date: getLabel(targetD), // (오늘) 제거하고 날짜만 표기
-              count: 0
-            });
-          }
-
-          rawItems.forEach(item => {
-            if (item.time) {
-              const itemDate = new Date(item.time * 1000);
-              const ik = getDayKey(itemDate);
-              const targetSlot = temp7.find(t => t.key === ik);
-              if (targetSlot) targetSlot.count++;
-            }
-          });
-          dailyPlayCounts5 = temp7;
-
-          // 2. 전체 및 Top 10 랭킹 리스트 동기화
-          rawItems.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
-
-          allLeaderboardList = rawItems.map(v => ({
-            name: sanitizeText(v.name),
-            score: Math.floor(Number(v.score) || 0)
-          }));
-
-          top10List = rawItems.slice(0, 10).map(v => {
-            let shipName = "";
-            if (v.ship === "Legend" || v.pType === 4) shipName = "Legend";
-            else if (v.ship === "Power" || v.pType === 1) shipName = "Power";
-            else if (v.ship === "Missile" || v.ship === "Speed" || v.pType === 0) shipName = "Missile";
-            else if (v.ship === "Twin" || v.pType === 2) shipName = "Twin";
-            else if (v.ship === "Random") shipName = "Random";
-
-            const timeStr = (typeof v.playTime === "number") ? ` (${v.playTime}s)` : "";
-            const shipLabel = shipName ? `[${shipName}]${timeStr}` : "";
-
-            return {
-              name: sanitizeText(v.name),
-              score: Math.floor(Number(v.score) || 0),
-              country: sanitizeText(v.country) || "Global",
-              ship: shipLabel
-            };
+        const temp7 = [];
+        for (let i = 6; i >= 0; i--) {
+          const targetD = new Date(now);
+          targetD.setDate(targetD.getDate() - i);
+          temp7.push({
+            key: getDayKey(targetD),
+            date: getLabel(targetD),
+            count: 0
           });
         }
-      }).catch(err => console.error("fetchTop10 Error:", err));
+
+        recentItems.forEach(item => {
+          if (item.time) {
+            const itemDate = new Date(item.time * 1000);
+            const ik = getDayKey(itemDate);
+            const targetSlot = temp7.find(t => t.key === ik);
+            if (targetSlot) targetSlot.count++;
+          }
+        });
+        dailyPlayCounts5 = temp7;
+      }
+
+      // (B) 전체 및 Top 10 랭킹 리스트 동기화
+      if (rankData && typeof rankData === "object") {
+        const rawItems = Object.values(rankData).filter(v => v && typeof v === "object" && v.score !== undefined);
+        rawItems.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+
+        allLeaderboardList = rawItems.map(v => ({
+          name: sanitizeText(v.name),
+          score: Math.floor(Number(v.score) || 0)
+        }));
+
+        top10List = rawItems.slice(0, 10).map(v => {
+          let shipName = "";
+          if (v.ship === "Legend" || v.pType === 4) shipName = "Legend";
+          else if (v.ship === "Power" || v.pType === 1) shipName = "Power";
+          else if (v.ship === "Missile" || v.ship === "Speed" || v.pType === 0) shipName = "Missile";
+          else if (v.ship === "Twin" || v.pType === 2) shipName = "Twin";
+          else if (v.ship === "Random") shipName = "Random";
+
+          const timeStr = (typeof v.playTime === "number") ? ` (${v.playTime}s)` : "";
+          const shipLabel = shipName ? `[${shipName}]${timeStr}` : "";
+
+          return {
+            name: sanitizeText(v.name),
+            score: Math.floor(Number(v.score) || 0),
+            country: sanitizeText(v.country) || "Global",
+            ship: shipLabel
+          };
+        });
+      }
+    }).catch(err => console.error("fetchTop10 Error:", err));
   } catch(e){}
 }
 fetchTop10();
