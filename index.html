@@ -858,38 +858,57 @@ function drawVectorRegularEnemy(c, subType) {
   c.lineCap = "round";
   const curTime = performance.now() / 1000;
 
-  // subType별 바이오닉 메카 컬러 테마 (4종 구분 유지)
-  const themes = [
-    { c1: "#1e1b4b", c2: "#3b0764", bdr: "#c084fc", inner: "#38bdf8", thr: "#ff0055" },
-    { c1: "#3b0a0a", c2: "#7f1d1d", bdr: "#f87171", inner: "#fbbf24", thr: "#ff7700" },
-    { c1: "#042f2e", c2: "#115e59", bdr: "#2dd4bf", inner: "#a7f3d0", thr: "#00ffaa" },
-    { c1: "#3b0764", c2: "#701a75", bdr: "#f472b6", inner: "#00f5ff", thr: "#d946ef" }
+  // 4가지 종류별 서로 다른 컬러 테마 및 메카닉 실루엣 정의
+  const enemyTypes = [
+    { 
+      // 타입 0: 날렵한 스텔스 인터셉터형 (보라/시안)
+      c1: "#1e1b4b", c2: "#3b0764", bdr: "#c084fc", inner: "#38bdf8", thr: "#ff0055",
+      pts: [[0,26],[10,13],[25,-4],[19,-17],[9,-11],[0,-19],[-9,-11],[-19,-17],[-25,-4],[-10,13]]
+    },
+    { 
+      // 타입 1: 전면 돌격형 해비 건쉽 (붉은색/골드)
+      c1: "#3b0a0a", c2: "#7f1d1d", bdr: "#f87171", inner: "#fbbf24", thr: "#ff7700",
+      pts: [[0,26],[14,10],[25,3],[18,-16],[0,-9],[-18,-16],[-25,3],[-14,10]]
+    },
+    { 
+      // 타입 2: 고기동 델타 익스플로러형 (청록/에메랄드)
+      c1: "#042f2e", c2: "#115e59", bdr: "#2dd4bf", inner: "#a7f3d0", thr: "#00ffaa",
+      pts: [[0,28],[18,8],[22,-10],[8,-16],[0,-12],[-8,-16],[-22,-10],[-18,8]]
+    },
+    { 
+      // 타입 3: 뾰족한 어썰트 스트라이커형 (마젠타/블루)
+      c1: "#3b0764", c2: "#701a75", bdr: "#f472b6", inner: "#00f5ff", thr: "#d946ef",
+      pts: [[0,27],[8,15],[24,-2],[15,-15],[0,-21],[-15,-15],[-24,-2],[-8,15]]
+    }
   ];
-  const th = themes[(subType || 0) % 4];
+
+  const th = enemyTypes[(subType || 0) % enemyTypes.length];
 
   // 상단 역방향 이온 부스터 2기
   drawMechThruster(c, -8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
   drawMechThruster(c, 8.5, -13, 3.2, -13, th.thr, th.bdr, curTime);
 
-  // 입체 외계 바이오닉 장갑
+  // 3D 입체 외계 바이오닉 메카 장갑
   const eg = c.createLinearGradient(-24, 0, 24, 0);
-  eg.addColorStop(0, th.c1); eg.addColorStop(0.5, th.c2); eg.addColorStop(1, th.c1);
+  eg.addColorStop(0, th.c1); 
+  eg.addColorStop(0.5, th.c2); 
+  eg.addColorStop(1, th.c1);
 
-  if (subType % 2 === 0) {
-    drawMechPoly(c, [[0,26],[10,13],[25,-4],[19,-17],[9,-11],[0,-19],[-9,-11],[-19,-17],[-25,-4],[-10,13]], eg, th.bdr, 1.5);
-  } else {
-    drawMechPoly(c, [[0,26],[14,10],[25,3],[18,-16],[0,-9],[-18,-16],[-25,3],[-14,10]], eg, th.bdr, 1.5);
-  }
+  drawMechPoly(c, th.pts, eg, th.bdr, 1.5);
 
-  // 내부 코어 장갑판
-  drawMechPoly(c, [[0,19],[7.5,6],[13,-6],[0,-11],[-13,-6],[-7.5,6]], "#0f172a", th.inner, 1.0);
+  // 내부 고열 코어 및 장갑판
+  drawMechPoly(c, [[0,18],[7,5],[12,-5],[0,-10],[-12,-5],[-7,5]], "#0f172a", th.inner, 1.0);
 
-  // 좌우로 스캔하는 붉은 모노아이 센서
+  // 좌우로 실시간 스캔하는 붉은 모노아이 센서
   const eyeX = Math.sin(curTime * 5.0 + subType) * 2.2;
   c.fillStyle = "#ff0044";
-  c.beginPath(); c.arc(eyeX, 7.5, 3.0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); 
+  c.arc(eyeX, 6.5, 2.8, 0, Math.PI * 2); 
+  c.fill();
   c.fillStyle = "#ffffff";
-  c.beginPath(); c.arc(eyeX, 7.5, 1.1, 0, Math.PI * 2); c.fill();
+  c.beginPath(); 
+  c.arc(eyeX, 6.5, 1.0, 0, Math.PI * 2); 
+  c.fill();
 
   c.restore();
 }
@@ -3557,7 +3576,7 @@ function handlePointerDown(e) {
 
     if (hedgehogLauncher.timeStopTimer <= 0) {
       // 터치 시 손가락에 가리지 않도록 기본 오프셋(101px)에 비행기 높이 1.5배(약 84px)를 더한 185px 위로 위치시킴
-      const yOffset = (e.pointerType === "touch") ? 135 : 0; 
+      const yOffset = (e.pointerType === "touch") ? 105 : 0; 
       player.targetX = coords.x;
       player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - yOffset));
     }
@@ -3647,7 +3666,7 @@ function handlePointerMove(e) {
   if (hedgehogLauncher.timeStopTimer > 0) return;
   const coords = getCanvasCoords(e.clientX, e.clientY);
   // 드래그 중에도 손가락 바로 위(185px 위)에 비행기가 위치하도록 동일하게 적용
-  const yOffset = (e.pointerType === "touch") ? 135 : 0; 
+  const yOffset = (e.pointerType === "touch") ? 105 : 0; 
   player.targetX = coords.x;
   player.targetY = Math.max(player.radius + 10, Math.min(LOGICAL_HEIGHT - player.radius - 10, coords.y - yOffset));
 }
