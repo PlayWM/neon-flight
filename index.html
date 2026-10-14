@@ -32,7 +32,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261013F.29";
+const VERSION_STR = "v20261014.01";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -2938,27 +2938,13 @@ class Bullet {
       ctx.restore();
 
     } else if (this.bulletType === "POWER") {
-      // 3. 파워 탄환: 사전 캐싱된 Gradient를 사용하며 절대 좌표로 직접 드로잉
-      } else if (this.bulletType === "POWER") {
-      const rKey = Math.round(this.radius);
-      if (!window.cachedPowerBulletGrads) window.cachedPowerBulletGrads = new Map();
-      let grad = window.cachedPowerBulletGrads.get(rKey);
-      if (!grad) {
-        grad = ctx.createRadialGradient(0, 0, 1, 0, 0, rKey);
-        grad.addColorStop(0, "#ffffff");
-        grad.addColorStop(0.3, "#ffe600");
-        grad.addColorStop(1, "#ff2244");
-        window.cachedPowerBulletGrads.set(rKey, grad);
-      }
+      // 3. 파워 탄환: 로컬 좌표계 기준 실시간 그라데이션 드로잉
       ctx.save();
       ctx.translate(this.x, this.y);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      ctx.save();
-      ctx.translate(this.x, this.y);
+      const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, this.radius);
+      grad.addColorStop(0, "#ffffff");
+      grad.addColorStop(0.3, "#ffe600");
+      grad.addColorStop(1, "#ff2244");
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
