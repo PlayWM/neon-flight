@@ -4113,7 +4113,7 @@ function safeGameLoop(now) {
         const t10Y = 445;
         const boardX = 35;
         const boardW = LOGICAL_WIDTH - 70; // 380
-        const boardH = 195;
+        const boardH = 215;
 
         ctx.save();
         ctx.fillStyle = "rgba(8, 12, 26, 0.90)";
@@ -4125,7 +4125,7 @@ function safeGameLoop(now) {
 
         const padX = 5, padY = 5, gapX = 6, gapY = 5;
         const subW = (boardW - padX * 2 - gapX) / 2; // 182px
-        const subH = (boardH - padY * 2 - gapY) / 2; // 90px (내부 박스 높이도 소폭 확장)
+        const subH = (boardH - padY * 2 - gapY) / 2; // 100px (내부 박스 하단 여유 대폭 확보)
 
         const panels = [
           { key: "Missile", title: "MISSILE", gx: 0, gy: 0 },
