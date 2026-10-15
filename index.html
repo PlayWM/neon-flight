@@ -1574,71 +1574,92 @@ class MissileShadow {
 
 // [여기에 추가]
 class MissileShard {
-  constructor(x, y, missileLv = 1) {
+  constructor(x, y, missileLv = 1, isMissileShip = false) {
     this.x = x;
     this.y = y;
     this.missileLv = missileLv;
+    this.isMissileShip = isMissileShip;
+    this.isTeleported = false; // 순간이동 여부 플래그
+    this.teleportTimer = 0;    // 머무는 시간 (5초)
     const ang = Math.random() * Math.PI * 2;
     const spd = 2.0 + Math.random() * 2.5;
     this.vx = Math.cos(ang) * spd;
     this.vy = Math.sin(ang) * spd;
-    this.radius = 5.6; // 40% 확대 (4.0 -> 5.6)
-    this.life = 2.0;   // 2초 후 소멸
+    this.radius = 5.6;
+    this.life = 2.0;
     this.totalLife = 2.0;
     this.rot = Math.random() * Math.PI * 2;
     this.rotSpd = (Math.random() - 0.5) * 8.0;
   }
   update(dt, enemiesList) {
-    this.life -= dt;
-
-    // 미사일 8렙 이상: 유효한 일반 적 방향으로 유도 선회
-    if (this.missileLv >= 8) {
-      let target = null;
-      let minDistSq = Infinity;
-      for (let i = 0; i < enemiesList.length; i++) {
-        const e = enemiesList[i];
-        // 회색 돌(isHeavy), 보호막(hasShield), 사망/흡수 중/화면 밖 제외
-        if (!e || e.isDead || e.hp <= 0 || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > LOGICAL_HEIGHT) continue;
-        const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
-        if (dSq < minDistSq) {
-          minDistSq = dSq;
-          target = e;
-        }
-      }
-
-      if (target) {
-        const targetAng = Math.atan2(target.y - this.y, target.x - this.x);
-        const curAng = Math.atan2(this.vy, this.vx);
-        let diff = targetAng - curAng;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        const turnRate = 9.0 * dt;
-        const newAng = curAng + Math.max(-turnRate, Math.min(turnRate, diff));
-        const curSpeed = Math.hypot(this.vx, this.vy) || 3.0;
-        this.vx = Math.cos(newAng) * curSpeed;
-        this.vy = Math.sin(newAng) * curSpeed;
+    // 미사일형 비행기 전용: 수명이 다해 소멸할 때 미사일형(pType === 0)이고 아직 텔레포트 안 했다면 50% 확률로 기체 앞으로 순간이동
+    if (this.isMissileShip && this.life <= 0.05 && !this.isTeleported && player && player.isAlive) {
+      if (Math.random() < 0.50) {
+        this.isTeleported = true;
+        this.x = player.x;
+        this.y = player.y - 38; // 비행기 머리 쪽 앞
+        this.life = 5.0;        // 5초간 유지
+        this.totalLife = 5.0;
+        this.vx = 0;
+        this.vy = 0;
+        this.rotSpd = 12.0;     // 회전 속도 증가
       }
     }
 
-    this.x += this.vx * (dt * 60);
-    this.y += this.vy * (dt * 60);
-    this.rot += this.rotSpd * dt;
+    if (this.isTeleported) {
+      this.teleportTimer += dt;
+      // 플레이어 머리 앞 위치 고정 및 회전
+      if (player && player.isAlive) {
+        this.x = player.x;
+        this.y = player.y - 38;
+      }
+      this.rot += this.rotSpd * dt;
+      this.life = Math.max(0, 5.0 - this.teleportTimer);
+    } else {
+      this.life -= dt;
+      // 미사일 8렙 이상 유도 로직
+      if (this.missileLv >= 8) {
+        let target = null;
+        let minDistSq = Infinity;
+        for (let i = 0; i < enemiesList.length; i++) {
+          const e = enemiesList[i];
+          if (!e || e.isDead || e.hp <= 0 || e.isBeingSucked || e.isHeavy || e.hasShield || e.y < 20 || e.y > LOGICAL_HEIGHT) continue;
+          const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
+          if (dSq < minDistSq) { minDistSq = dSq; target = e; }
+        }
+        if (target) {
+          const targetAng = Math.atan2(target.y - this.y, target.x - this.x);
+          const curAng = Math.atan2(this.vy, this.vx);
+          let diff = targetAng - curAng;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          const turnRate = 9.0 * dt;
+          const newAng = curAng + Math.max(-turnRate, Math.min(turnRate, diff));
+          const curSpeed = Math.hypot(this.vx, this.vy) || 3.0;
+          this.vx = Math.cos(newAng) * curSpeed;
+          this.vy = Math.sin(newAng) * curSpeed;
+        }
+      }
+      this.x += this.vx * (dt * 60);
+      this.y += this.vy * (dt * 60);
+      this.rot += this.rotSpd * dt;
+    }
 
     if (this.life <= 0) return;
 
-    // 파편에 닿은 적 즉시 파괴 판정 (회색 돌 및 보스 제외, 일반 적 및 보호막 적 즉사)
+    // 충돌 판정 (적 즉시 파괴)
     for (let ei = enemiesList.length - 1; ei >= 0; ei--) {
       const e = enemiesList[ei];
       if (!e || e.isDead || e.hp <= 0 || e.isBeingSucked || e.y < 20) continue;
-      if (e.isHeavy) continue; // 단단한 암석 제외
+      if (e.isHeavy) continue;
 
       const dSq = (this.x - e.x) * (this.x - e.x) + (this.y - e.y) * (this.y - e.y);
       const hitR = this.radius + e.radius;
       if (dSq <= hitR * hitR) {
-        e.hasShield = false; // 보호막이 있다면 무력화
+        e.hasShield = false;
         safeKillEnemy(e, "#00f5ff");
         playExplosionSound();
-        this.life = 0; // 파편 소모
+        if (!this.isTeleported) this.life = 0;
         break;
       }
     }
@@ -1858,159 +1879,58 @@ class StationaryMissileLaser {
     this.hitEnemies = [];
     this.reflectedShards = [];
     const maxBendRad = (20 * Math.PI) / 180;
-    const maxSearchWidth = 50;
+    const maxSearchWidth = 120;
 
-    let blockedObj = null;
-    let blockedIsEnemy = false;
-    let blockY = 0;
+    let currentX = this.x;
+    let currentY = this.startY;
+    let lastTarget = null;
+    let bendCount = 0;
 
-    // 1. 회색 돌맹이(isHeavy) 및 보호막 적 레이저 차단 및 타격 체크
-    if (Array.isArray(enemies)) {
+    for (let step = 0; step < 3; step++) {
+      let nextEnemy = null;
+      let minDistSq = Infinity;
+
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
-        if (e && !e.isDead && e.hp > 0 && e.y < this.startY && e.y >= 20) {
-          if (this.targetSide === "LEFT" && e.x > this.x + 15) continue;
-          if (this.targetSide === "RIGHT" && e.x < this.x - 15) continue;
-          if (Math.abs(e.x - this.x) <= e.radius + 14) {
-            const hitPointY = e.y + e.radius;
-            if (!blockedObj || hitPointY > blockY) {
-              blockedObj = e;
-              blockedIsEnemy = true;
-              blockY = hitPointY;
-            }
+        if (!e || e.hp <= 0 || e.isDead || e.isHeavy || e.y >= currentY || e.y < 20) continue;
+        if (lastTarget && e === lastTarget) continue;
+        if (this.targetSide === "LEFT" && step === 0 && e.x > currentX - 2) continue;
+        if (this.targetSide === "RIGHT" && step === 0 && e.x < currentX + 2) continue;
+
+        if (Math.abs(e.x - currentX) <= maxSearchWidth + e.radius) {
+          const dSq = (e.x - currentX) * (e.x - currentX) + (e.y - currentY) * (e.y - currentY);
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            nextEnemy = e;
           }
         }
       }
+
+      if (!nextEnemy) {
+        let remainDist = Math.max(0, currentY);
+        const lastAngle = this.path.length >= 2 ? Math.atan2(this.path[this.path.length-1].x - this.path[this.path.length-2].x, Math.max(1, this.path[this.path.length-2].y - this.path[this.path.length-1].y)) : 0;
+        this.path.push({ x: currentX + Math.sin(lastAngle) * remainDist, y: 0 });
+        break;
+      }
+
+      let dx = nextEnemy.x - currentX;
+      let dy = Math.max(1, currentY - nextEnemy.y);
+      let angle = Math.atan2(dx, dy);
+      let clampedAngle = (step === 0 && this.targetSide === "LEFT") ? Math.max(-maxBendRad, Math.min(0, angle)) :
+                         (step === 0 && this.targetSide === "RIGHT") ? Math.max(0, Math.min(maxBendRad, angle)) :
+                         Math.max(-maxBendRad, Math.min(maxBendRad, angle));
+
+      currentX = currentX + Math.sin(clampedAngle) * dy;
+      currentY = nextEnemy.y;
+
+      this.path.push({ x: currentX, y: currentY });
+      this.hitEnemies.push({ enemy: nextEnemy, bendCount: bendCount++ });
+      lastTarget = nextEnemy;
     }
 
-    // 2. 혜성(Meteors) 레이저 차단 (파괴 불가, 반사선 생성)
-    if (meteorManager && Array.isArray(meteorManager.meteors)) {
-      for (let i = 0; i < meteorManager.meteors.length; i++) {
-        const m = meteorManager.meteors[i];
-        if (m && m.active && m.y < this.startY && m.y >= 20) {
-          if (this.targetSide === "LEFT" && m.x > this.x + 15) continue;
-          if (this.targetSide === "RIGHT" && m.x < this.x - 15) continue;
-          if (Math.abs(m.x - this.x) <= m.radius + 14) {
-            const hitPointY = m.y + m.radius;
-            if (!blockedObj || hitPointY > blockY) {
-              blockedObj = m;
-              blockedIsEnemy = false;
-              blockY = hitPointY;
-            }
-          }
-        }
-      }
-    }
-
-    let closerEnemy = null;
-    let minD1Sq = Infinity;
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (e.hp <= 0 || e.isDead || e.isHeavy || e.y >= this.startY || e.y < 20) continue;
-      // [항목 2] 첫 꺾임 방향 강제: 왼쪽 레이저는 발사구보다 왼쪽의 적만, 오른쪽 레이저는 오른쪽의 적만 1차 조준
-      if (this.targetSide === "LEFT" && e.x > this.x - 2) continue;
-      if (this.targetSide === "RIGHT" && e.x < this.x + 2) continue;
-
-      if (Math.abs(e.x - this.x) <= maxSearchWidth + e.radius) {
-        const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.startY) * (e.y - this.startY);
-        if (dSq < minD1Sq) { minD1Sq = dSq; closerEnemy = e; }
-      }
-    }
-
-    // 장애물(돌맹이/혜성)에 부딪힌 경우 레이저가 멈추며 튕겨나오는 파편선 생성
-    if (blockedObj && (!closerEnemy || closerEnemy.y < blockY)) {
-      this.path.push({ x: this.x, y: blockY });
-      if (blockedIsEnemy) {
-        this.hitEnemies.push({ enemy: blockedObj, bendCount: 0 });
-      }
-      this.reflectedShards = [];
-      for (let s = 0; s < 5; s++) {
-        const shardLen = 35 + Math.random() * 50;
-        const ang = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 1.8);
-        this.reflectedShards.push({
-          sx: this.x, sy: blockY,
-          ex: this.x + Math.cos(ang) * shardLen,
-          ey: blockY + Math.sin(ang) * shardLen
-        });
-      }
-      return;
-    }
-
-    if (!closerEnemy) {
-      // 적이 없으면 수직 상단으로 관통 직진
+    if (this.path.length === 1) {
       this.path.push({ x: this.x, y: 0 });
-      return;
     }
-
-    // 1차 타깃 연결 (첫 꺾임)
-    let t1 = closerEnemy;
-    let dx1 = t1.x - this.x;
-    let dy1 = Math.max(1, this.startY - t1.y);
-    let angle1 = Math.atan2(dx1, dy1);
-    // 첫 꺾임 각도 클램프 (왼쪽 레이저는 음수 각도만, 오른쪽 레이저는 양수 각도만)
-    let clampedAngle1 = (this.targetSide === "LEFT") ? Math.max(-maxBendRad, Math.min(0, angle1)) : Math.max(0, Math.min(maxBendRad, angle1));
-    let finalX1 = this.x + Math.sin(clampedAngle1) * dy1;
-
-    this.path.push({ x: finalX1, y: t1.y });
-    this.hitEnemies.push({ enemy: t1, bendCount: 0 });
-
-    // 2차 타깃 탐색: 첫 꺾임 이후에는 좌/우 방향 제한 없이 자유롭게 가장 가까운 적 조준
-    let t2 = null;
-    let minD2Sq = Infinity;
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (e !== t1 && e.hp > 0 && !e.isDead && !e.isHeavy && e.y < t1.y && e.y >= 20) {
-        const dSq = (e.x - finalX1) * (e.x - finalX1) + (e.y - t1.y) * (e.y - t1.y);
-        if (dSq < minD2Sq) { minD2Sq = dSq; t2 = e; }
-      }
-    }
-
-    if (!t2) {
-      // [항목 1] 1차 적 타격 후 2차 적이 없어도 상단 끝까지 관통하여 뻗어 나감
-      let remainDist = Math.max(0, t1.y);
-      this.path.push({ x: finalX1 + Math.sin(clampedAngle1) * remainDist, y: 0 });
-      return;
-    }
-
-    let dx2 = t2.x - finalX1;
-    let dy2 = Math.max(1, t1.y - t2.y);
-    let angle2 = Math.atan2(dx2, dy2);
-    let clampedAngle2 = Math.max(-maxBendRad, Math.min(maxBendRad, angle2));
-    let finalX2 = finalX1 + Math.sin(clampedAngle2) * dy2;
-
-    this.path.push({ x: finalX2, y: t2.y });
-    this.hitEnemies.push({ enemy: t2, bendCount: 1 });
-
-    // 3차 타깃 탐색: 좌/우 방향 제한 없이 자유 조준
-    let t3 = null;
-    let minD3Sq = Infinity;
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (e !== t1 && e !== t2 && e.hp > 0 && !e.isDead && !e.isHeavy && e.y < t2.y && e.y >= 20) {
-        const dSq = (e.x - finalX2) * (e.x - finalX2) + (e.y - t2.y) * (e.y - t2.y);
-        if (dSq < minD3Sq) { minD3Sq = dSq; t3 = e; }
-      }
-    }
-
-    if (!t3) {
-      // [항목 1] 2차 적 타격 후 상단 끝까지 관통 연장
-      let remainDist = Math.max(0, t2.y);
-      this.path.push({ x: finalX2 + Math.sin(clampedAngle2) * remainDist, y: 0 });
-      return;
-    }
-
-    let dx3 = t3.x - finalX2;
-    let dy3 = Math.max(1, t2.y - t3.y);
-    let angle3 = Math.atan2(dx3, dy3);
-    let clampedAngle3 = Math.max(-maxBendRad, Math.min(maxBendRad, angle3));
-    let finalX3 = finalX2 + Math.sin(clampedAngle3) * dy3;
-
-    this.path.push({ x: finalX3, y: t3.y });
-    this.hitEnemies.push({ enemy: t3, bendCount: 2 });
-
-    // [항목 1] 3차 적 타격 후에도 상단 끝까지 완전히 관통
-    let finalRemainDist = Math.max(0, t3.y);
-    this.path.push({ x: finalX3 + Math.sin(clampedAngle3) * finalRemainDist, y: 0 });
   }
 
   update(dt, enemiesList) {
@@ -4530,7 +4450,8 @@ function safeGameLoop(now) {
               else if (curMissileLv >= 8) shardChance = 0.30;
 
               if (!wasDeadBefore && e.isDead && Math.random() < shardChance) {
-                missileShards.push(new MissileShard(hitX, hitY, curMissileLv));
+                const isMissileType = (player && player.pType === 0);
+                missileShards.push(new MissileShard(hitX, hitY, curMissileLv, isMissileType));
               }
 
               if (isType0Missile) {
