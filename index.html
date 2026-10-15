@@ -4111,10 +4111,11 @@ function safeGameLoop(now) {
         }
 
           // 1. 기체별 4분할 탑 5 랭킹 보드 (Y: 445 ~ 630로 상향 배치)
+        // 1. 기체별 4분할 탑 5 랭킹 보드 (외곽 박스 높이를 185 -> 195로 확장하여 하단 여유 확보)
         const t10Y = 445;
         const boardX = 35;
         const boardW = LOGICAL_WIDTH - 70; // 380
-        const boardH = 185;
+        const boardH = 195;
 
         ctx.save();
         ctx.fillStyle = "rgba(8, 12, 26, 0.90)";
@@ -4126,7 +4127,7 @@ function safeGameLoop(now) {
 
         const padX = 5, padY = 5, gapX = 6, gapY = 5;
         const subW = (boardW - padX * 2 - gapX) / 2; // 182px
-        const subH = (boardH - padY * 2 - gapY) / 2; // 85px
+        const subH = (boardH - padY * 2 - gapY) / 2; // 90px (내부 박스 높이도 소폭 확장)
 
         const panels = [
           { key: "Missile", title: "MISSILE", gx: 0, gy: 0 },
