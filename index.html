@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261015.03";
+const VERSION_STR = "v20261015.05";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -275,12 +275,28 @@ window.addEventListener("pagehide", () => {
 });
 
 let top10List = [];
-let allLeaderboardList = []; // Firebase에 등록된 전체 랭킹 목록 저장
-let dailyPlayCounts5 = []; // 최근 5일 데이터 저장 배열
+let top10ByShip = { Missile: [], Power: [], Twin: [], Legend: [] }; // 기체별 Top 10 저장
+let allLeaderboardList = []; // 전체 랭킹 목록 저장
+let dailyPlayCounts5 = []; // 최근 7일 데이터 저장 배열
+
+// 국가명 2자리 약어 변환 유틸
+function getShortCountryCode(c) {
+  const clean = sanitizeText(c).toLowerCase();
+  if (!clean || clean === "unknown") return "GL";
+  const map = {
+    "vietnam": "VN", "korea": "KR", "south korea": "KR", "republic of korea": "KR",
+    "united states": "US", "usa": "US", "japan": "JP", "china": "CN",
+    "thailand": "TH", "singapore": "SG", "philippines": "PH", "indonesia": "ID",
+    "malaysia": "MY", "taiwan": "TW", "hong kong": "HK", "canada": "CA",
+    "australia": "AU", "united kingdom": "UK", "germany": "DE", "france": "FR",
+    "local": "LC", "global": "GL"
+  };
+  if (map[clean]) return map[clean];
+  return clean.substring(0, 2).toUpperCase();
+}
 
 function fetchTop10() {
   try {
-    // 등록된 모든 점수를 가져와서 전체 등수 및 최근 7일 플레이 횟수 100% 반영
     fetch(FIREBASE_URL + `?t=${Date.now()}`)
       .then(r => r.json())
       .then(data => {
@@ -313,7 +329,7 @@ function fetchTop10() {
           });
           dailyPlayCounts5 = temp7;
 
-          // 2. 전체 및 Top 10 랭킹 리스트 동기화
+          // 2. 점수 내림차순 정렬
           rawItems.sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
 
           allLeaderboardList = rawItems.map(v => ({
@@ -321,24 +337,33 @@ function fetchTop10() {
             score: Math.floor(Number(v.score) || 0)
           }));
 
-          top10List = rawItems.slice(0, 10).map(v => {
-            let shipName = "";
-            if (v.ship === "Legend" || v.pType === 4) shipName = "Legend";
-            else if (v.ship === "Power" || v.pType === 1) shipName = "Power";
-            else if (v.ship === "Missile" || v.ship === "Speed" || v.pType === 0) shipName = "Missile";
-            else if (v.ship === "Twin" || v.pType === 2) shipName = "Twin";
-            else if (v.ship === "Random") shipName = "Random";
+          // 3. 기체별 Top 10 분류 (Missile, Power, Twin, Legend)
+          const shipBuckets = { Missile: [], Power: [], Twin: [], Legend: [] };
 
-            const timeStr = (typeof v.playTime === "number") ? ` (${v.playTime}s)` : "";
-            const shipLabel = shipName ? `[${shipName}]${timeStr}` : "";
+          rawItems.forEach(v => {
+            let sKey = "Missile";
+            if (v.ship === "Legend" || v.pType === 4) sKey = "Legend";
+            else if (v.ship === "Power" || v.pType === 1) sKey = "Power";
+            else if (v.ship === "Twin" || v.pType === 2) sKey = "Twin";
+            else if (v.ship === "Missile" || v.ship === "Speed" || v.pType === 0) sKey = "Missile";
+            else return; // 기타 알 수 없는 타입 제외
 
-            return {
-              name: sanitizeText(v.name),
-              score: Math.floor(Number(v.score) || 0),
-              country: sanitizeText(v.country) || "Global",
-              ship: shipLabel
-            };
+            if (shipBuckets[sKey].length < 10) {
+              const timeStr = (typeof v.playTime === "number") ? `(${v.playTime}s)` : "";
+              shipBuckets[sKey].push({
+                name: sanitizeText(v.name),
+                score: Math.floor(Number(v.score) || 0),
+                country: getShortCountryCode(v.country),
+                timeStr: timeStr
+              });
+            }
           });
+
+          top10ByShip = shipBuckets;
+          top10List = rawItems.slice(0, 10).map(v => ({
+            name: sanitizeText(v.name),
+            score: Math.floor(Number(v.score) || 0)
+          }));
         }
       }).catch(err => console.error("fetchTop10 Error:", err));
   } catch(e){}
@@ -4085,40 +4110,87 @@ function safeGameLoop(now) {
           ctx.restore();
         }
 
-        // 1. 글로벌 탑 10 랭킹 보드 (위로 이동, Y: 480 ~ 665)
+        // 1. 기체별 4분할 탑 10 랭킹 보드 (외곽 크기 380 x 185 그대로 유지, Y: 480 ~ 665)
         const t10Y = 480;
+        const boardX = 35;
+        const boardW = LOGICAL_WIDTH - 70; // 380
+        const boardH = 185;
+
         ctx.save();
-        ctx.fillStyle = "rgba(10, 15, 32, 0.85)";
-        drawRoundRect(ctx, 35, t10Y, LOGICAL_WIDTH - 70, 185, 10);
+        ctx.fillStyle = "rgba(8, 12, 26, 0.90)";
+        drawRoundRect(ctx, boardX, t10Y, boardW, boardH, 10);
         ctx.fill();
         ctx.strokeStyle = "#00f5ff";
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        ctx.fillStyle = "#00f5ff";
-        ctx.font = `bold 13px ${FONT_FAMILY}`;
-        ctx.textAlign = "center";
-        ctx.fillText("★ GLOBAL TOP 10 PLAYERS ★", LOGICAL_WIDTH / 2, t10Y + 18);
+        // 2x2 내부 서브 박스 레이아웃 정의
+        const padX = 5, padY = 5, gapX = 6, gapY = 5;
+        const subW = (boardW - padX * 2 - gapX) / 2; // 182px
+        const subH = (boardH - padY * 2 - gapY) / 2; // 85px
 
-        ctx.font = `bold 12px ${FONT_FAMILY}`;
-        if (top10List.length === 0) {
-          ctx.fillStyle = "#a0b0c8";
-          ctx.fillText("WAITING FOR RECORDS...", LOGICAL_WIDTH / 2, t10Y + 90);
-        } else {
-          const showLen = Math.min(10, top10List.length);
-          for (let idx = 0; idx < showLen; idx++) {
-            const item = top10List[idx];
-            const rowY = Math.round(t10Y + 34 + idx * 15);
-            
-            ctx.textAlign = "left";
-            ctx.fillStyle = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
-            ctx.fillText(`${idx + 1}. [${item.country}] ${item.name}`, 44, rowY);
-            
-            ctx.textAlign = "right";
-            const shipLabel = item.ship ? `${item.ship}  ` : "";
-            ctx.fillText(`${shipLabel}${item.score} PTS`, LOGICAL_WIDTH - 44, rowY);
+        const panels = [
+          { key: "Missile", title: "MISSILE", gx: 0, gy: 0 },
+          { key: "Power",   title: "POWER",   gx: 1, gy: 0 },
+          { key: "Twin",    title: "TWIN",    gx: 0, gy: 1 },
+          { key: "Legend",  title: "LEGEND",  gx: 1, gy: 1 }
+        ];
+
+        panels.forEach(p => {
+          const px = boardX + padX + p.gx * (subW + gapX);
+          const py = t10Y + padY + p.gy * (subH + gapY);
+
+          // 개별 네모 박스 배경 및 테두리
+          ctx.fillStyle = "rgba(12, 20, 40, 0.85)";
+          drawRoundRect(ctx, px, py, subW, subH, 6);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(0, 245, 255, 0.75)";
+          ctx.lineWidth = 1.1;
+          ctx.stroke();
+
+          // 상단 시안색 헤더 바
+          const headerH = 12;
+          ctx.fillStyle = "#00f5ff";
+          drawRoundRect(ctx, px + 1, py + 1, subW - 2, headerH, 4);
+          ctx.fill();
+
+          // 기체 타이틀 텍스트
+          ctx.fillStyle = "#040814";
+          ctx.font = `bold 8.5px ${FONT_FAMILY}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(p.title, px + subW / 2, py + 1 + headerH / 2 + 0.5);
+
+          // 기체별 Top 10 리스트 출력
+          ctx.textBaseline = "alphabetic";
+          const list = (top10ByShip && top10ByShip[p.key]) ? top10ByShip[p.key] : [];
+
+          if (list.length === 0) {
+            ctx.fillStyle = "#64748b";
+            ctx.font = `bold 8px ${FONT_FAMILY}`;
+            ctx.textAlign = "center";
+            ctx.fillText("NO RECORDS", px + subW / 2, py + subH / 2 + 6);
+          } else {
+            ctx.font = `bold 6.8px ${FONT_FAMILY}`;
+            const showLen = Math.min(10, list.length);
+            for (let idx = 0; idx < showLen; idx++) {
+              const item = list[idx];
+              const rowY = py + headerH + 8.2 + idx * 6.9;
+              const rowColor = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
+
+              // 좌측: 순위. [국적코드] 이름
+              ctx.fillStyle = rowColor;
+              ctx.textAlign = "left";
+              const shortName = item.name.length > 8 ? item.name.substring(0, 8) : item.name;
+              ctx.fillText(`${idx + 1}. [${item.country}] ${shortName}`, px + 4, rowY);
+
+              // 우측: (초) 점수 P (기체 종류 표기 제거, PTS -> P 변경)
+              ctx.textAlign = "right";
+              const tLabel = item.timeStr ? `${item.timeStr} ` : "";
+              ctx.fillText(`${tLabel}${item.score} P`, px + subW - 4, rowY);
+            }
           }
-        }
+        });
         ctx.restore();
 
         // 2. 최근 5일간 일일 플레이 횟수 표 (탑 10 아래로 이동, Y: 675 ~ 729)
