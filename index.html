@@ -4110,44 +4110,6 @@ function safeGameLoop(now) {
           ctx.restore();
         }
 
-        // 1. 기체별 4분할 탑 10 랭킹 보드 (외곽 크기 380 x 185 그대로 유지, Y: 480 ~ 665)
-        const t10Y = 445;
-        const boardX = 35;
-        const boardW = LOGICAL_WIDTH - 70; // 380
-        const boardH = 185;
-
-        ctx.save();
-        ctx.fillStyle = "rgba(8, 12, 26, 0.90)";
-        drawRoundRect(ctx, boardX, t10Y, boardW, boardH, 10);
-        ctx.fill();
-        ctx.strokeStyle = "#00f5ff";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // 2x2 내부 서브 박스 레이아웃 정의
-        const padX = 5, padY = 5, gapX = 6, gapY = 5;
-        const subW = (boardW - padX * 2 - gapX) / 2; // 182px
-        const subH = (boardH - padY * 2 - gapY) / 2; // 85px
-
-        const panels = [
-          { key: "Missile", title: "MISSILE", gx: 0, gy: 0 },
-          { key: "Power",   title: "POWER",   gx: 1, gy: 0 },
-          { key: "Twin",    title: "TWIN",    gx: 0, gy: 1 },
-          { key: "Legend",  title: "LEGEND",  gx: 1, gy: 1 }
-        ];
-
-        panels.forEach(p => {
-          const px = boardX + padX + p.gx * (subW + gapX);
-          const py = t10Y + padY + p.gy * (subH + gapY);
-
-          // 개별 네모 박스 배경 및 테두리
-          ctx.fillStyle = "rgba(12, 20, 40, 0.85)";
-          drawRoundRect(ctx, px, py, subW, subH, 6);
-          ctx.fill();
-          ctx.strokeStyle = "rgba(0, 245, 255, 0.75)";
-          ctx.lineWidth = 1.1;
-          ctx.stroke();
-
           // 1. 기체별 4분할 탑 5 랭킹 보드 (Y: 445 ~ 630로 상향 배치)
         const t10Y = 445;
         const boardX = 35;
