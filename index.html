@@ -1206,7 +1206,7 @@ class Player {
     // [트윈 비행기 8레벨/16레벨 전자기장 오라 감속 효과]
     const isTwin = (this.pType === 2);
     if (isTwin && this.fireRateStat >= 8) {
-      const fieldRadius = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 2.2;
+      const fieldRadius = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 4.4;
       for (let i = 0; i < enemiesList.length; i++) {
         const e = enemiesList[i];
         if (!e || e.isDead || e.hp <= 0 || e.isHeavy || e.isBeingSucked) continue;
@@ -1216,7 +1216,7 @@ class Player {
           if (!e.isSlowedByTwinField) {
             e.isSlowedByTwinField = true;
             e.originalSpeed = e.speed;
-            e.speed *= 0.50;
+            e.speed *= 0.30;
           }
         } else {
           if (e.isSlowedByTwinField) {
@@ -1486,7 +1486,7 @@ shoot(curTime, bullets) {
 
       // [트윈형 8레벨/16레벨 비행기 외곽 전자기장(번개) 오라 렌더링]
       if (this.pType === 2 && this.fireRateStat >= 8) {
-        const auraR = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5);
+        const auraR = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 2.0;
         ctx.save();
         ctx.strokeStyle = "rgba(0, 245, 255, 0.45)";
         ctx.lineWidth = 1.2;
