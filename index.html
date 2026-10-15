@@ -4021,12 +4021,12 @@ function safeGameLoop(now) {
           rollP = bStats.p; rollM = bStats.m; rollR = bStats.r;
         }
 
-        // 비행기 선택 카드 위치 25px 상향 조정
+        // 카드를 위쪽으로 35px씩 올려서 탑 5 공간을 넓힘
         const cards = [
-          { name: "MISSILE", p: 1, m: 5, r: 1, bdr: "#00f5ff", y: 140, img: 0, sub: "HOMING MISSILE SPECIALIST" },
-          { name: "POWER", p: 5, m: 1, r: 1, bdr: "#ff2244", y: 225, img: 1, sub: "BLACK HOLE & HEAVY CANNON" },
-          { name: "TWIN", p: 1, m: 1, r: 5, bdr: "#00ff66", y: 310, img: 2, sub: "LIGHTNING ORB & RAPID FIRE" },
-          { name: "RANDOM", p: rollP, m: rollM, r: rollR, bdr: "#d000ff", y: 395, img: randomCardDesign, sub: "10% CHANCE OF LEGEND SHIP" }
+          { name: "MISSILE", p: 1, m: 5, r: 1, bdr: "#00f5ff", y: 105, img: 0, sub: "HOMING MISSILE SPECIALIST" },
+          { name: "POWER", p: 5, m: 1, r: 1, bdr: "#ff2244", y: 190, img: 1, sub: "BLACK HOLE & HEAVY CANNON" },
+          { name: "TWIN", p: 1, m: 1, r: 5, bdr: "#00ff66", y: 275, img: 2, sub: "LIGHTNING ORB & RAPID FIRE" },
+          { name: "RANDOM", p: rollP, m: rollM, r: rollR, bdr: "#d000ff", y: 360, img: randomCardDesign, sub: "10% CHANCE OF LEGEND SHIP" }
         ];
 
         for (let i = 0; i < cards.length; i++) {
@@ -4111,7 +4111,7 @@ function safeGameLoop(now) {
         }
 
         // 1. 기체별 4분할 탑 10 랭킹 보드 (외곽 크기 380 x 185 그대로 유지, Y: 480 ~ 665)
-        const t10Y = 480;
+        const t10Y = 445;
         const boardX = 35;
         const boardW = LOGICAL_WIDTH - 70; // 380
         const boardH = 185;
@@ -4148,15 +4148,51 @@ function safeGameLoop(now) {
           ctx.lineWidth = 1.1;
           ctx.stroke();
 
-          // 상단 시안색 헤더 바 (높이 15px로 확대)
-          const headerH = 15;
+          // 1. 기체별 4분할 탑 5 랭킹 보드 (Y: 445 ~ 630로 상향 배치)
+        const t10Y = 445;
+        const boardX = 35;
+        const boardW = LOGICAL_WIDTH - 70; // 380
+        const boardH = 185;
+
+        ctx.save();
+        ctx.fillStyle = "rgba(8, 12, 26, 0.90)";
+        drawRoundRect(ctx, boardX, t10Y, boardW, boardH, 10);
+        ctx.fill();
+        ctx.strokeStyle = "#00f5ff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        const padX = 5, padY = 5, gapX = 6, gapY = 5;
+        const subW = (boardW - padX * 2 - gapX) / 2; // 182px
+        const subH = (boardH - padY * 2 - gapY) / 2; // 85px
+
+        const panels = [
+          { key: "Missile", title: "MISSILE", gx: 0, gy: 0 },
+          { key: "Power",   title: "POWER",   gx: 1, gy: 0 },
+          { key: "Twin",    title: "TWIN",    gx: 0, gy: 1 },
+          { key: "Legend",  title: "LEGEND",  gx: 1, gy: 1 }
+        ];
+
+        panels.forEach(p => {
+          const px = boardX + padX + p.gx * (subW + gapX);
+          const py = t10Y + padY + p.gy * (subH + gapY);
+
+          ctx.fillStyle = "rgba(12, 20, 40, 0.85)";
+          drawRoundRect(ctx, px, py, subW, subH, 6);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(0, 245, 255, 0.75)";
+          ctx.lineWidth = 1.1;
+          ctx.stroke();
+
+          // 상단 시안색 헤더 바 (높이 18px로 확대)
+          const headerH = 18;
           ctx.fillStyle = "#00f5ff";
           drawRoundRect(ctx, px + 1, py + 1, subW - 2, headerH, 4);
           ctx.fill();
 
-          // 기체 타이틀 텍스트 (10px로 확대)
+          // 기체 타이틀 텍스트 (12px로 30% 확대)
           ctx.fillStyle = "#040814";
-          ctx.font = `bold 10px ${FONT_FAMILY}`;
+          ctx.font = `bold 12px ${FONT_FAMILY}`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(p.title, px + subW / 2, py + 1 + headerH / 2 + 0.5);
@@ -4167,15 +4203,15 @@ function safeGameLoop(now) {
 
           if (list.length === 0) {
             ctx.fillStyle = "#64748b";
-            ctx.font = `bold 10px ${FONT_FAMILY}`;
+            ctx.font = `bold 11px ${FONT_FAMILY}`;
             ctx.textAlign = "center";
             ctx.fillText("NO RECORDS", px + subW / 2, py + subH / 2 + 6);
           } else {
-            ctx.font = `bold 9.5px ${FONT_FAMILY}`;
+            ctx.font = `bold 12.5px ${FONT_FAMILY}`; // 글자 크기 기존 9.5px -> 12.5px로 30% 확대
             const showLen = Math.min(5, list.length);
             for (let idx = 0; idx < showLen; idx++) {
               const item = list[idx];
-              const rowY = py + headerH + 12.5 + idx * 13.0; // 5줄 기준 넉넉한 행 간격(13px)
+              const rowY = py + headerH + 11.5 + idx * 14.5; // 행 간격 14.5px로 조정
               const rowColor = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
 
               ctx.fillStyle = rowColor;
@@ -4189,7 +4225,7 @@ function safeGameLoop(now) {
 
               // 2. 좌측 출력: 우측 텍스트와 절대 겹치지 않도록 최대 허용 폭(maxLeftW) 지정
               const maxLeftW = subW - rightWidth - 14;
-              const shortName = item.name.length > 7 ? item.name.substring(0, 7) : item.name;
+              const shortName = item.name.length > 6 ? item.name.substring(0, 6) : item.name;
               const leftText = `${idx + 1}.[${item.country}] ${shortName}`;
               ctx.textAlign = "left";
               ctx.fillText(leftText, px + 5, rowY, maxLeftW);
