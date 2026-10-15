@@ -34,7 +34,7 @@ const nameInput = document.getElementById("name-input");
 
 const LOGICAL_WIDTH = 450;
 const LOGICAL_HEIGHT = 800;
-const VERSION_STR = "v20261015.05";
+const VERSION_STR = "v20261015.07";
 const FIREBASE_URL = "https://flywm-d0b39-default-rtdb.asia-southeast1.firebasedatabase.app/leaderboard.json";
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif";
 
@@ -1206,7 +1206,7 @@ class Player {
     // [트윈 비행기 8레벨/16레벨 전자기장 오라 감속 효과]
     const isTwin = (this.pType === 2);
     if (isTwin && this.fireRateStat >= 8) {
-      const fieldRadius = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 4.4;
+      const fieldRadius = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 4;
       for (let i = 0; i < enemiesList.length; i++) {
         const e = enemiesList[i];
         if (!e || e.isDead || e.hp <= 0 || e.isHeavy || e.isBeingSucked) continue;
@@ -1216,7 +1216,7 @@ class Player {
           if (!e.isSlowedByTwinField) {
             e.isSlowedByTwinField = true;
             e.originalSpeed = e.speed;
-            e.speed *= 0.30;
+            e.speed *= 0.50;
           }
         } else {
           if (e.isSlowedByTwinField) {
