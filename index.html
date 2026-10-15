@@ -4173,26 +4173,6 @@ function safeGameLoop(now) {
             ctx.font = `bold 12.5px ${FONT_FAMILY}`; // 글자 크기 기존 9.5px -> 12.5px로 30% 확대
             const showLen = Math.min(5, list.length);
             for (let idx = 0; idx < showLen; idx++) {
-              const item = list[idx];
-              const rowY = py + headerH + 11.5 + idx * 14.5; // 행 간격 14.5px로 조정
-              const rowColor = idx === 0 ? "#ffe600" : (idx < 3 ? "#00f5ff" : "#ffffff");
-
-              ctx.fillStyle = rowColor;
-
-              // 1. 우측 먼저 계산 및 출력: (초) 점수 P
-              const tLabel = item.timeStr ? `${item.timeStr} ` : "";
-              const rightText = `${tLabel}${item.score} P`;
-              const rightWidth = ctx.measureText(rightText).width;
-              ctx.textAlign = "right";
-              ctx.fillText(rightText, px + subW - 5, rowY);
-
-              // 2. 좌측 출력: 우측 텍스트와 절대 겹치지 않도록 최대 허용 폭(maxLeftW) 지정
-              const maxLeftW = subW - rightWidth - 14;
-              const shortName = item.name.length > 6 ? item.name.substring(0, 6) : item.name;
-              const leftText = `${idx + 1}.[${item.country}] ${shortName}`;
-              ctx.textAlign = "left";
-              ctx.fillText(leftText, px + 5, rowY, maxLeftW);
-            }
           }
         });
         ctx.restore();
