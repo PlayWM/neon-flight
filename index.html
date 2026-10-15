@@ -1202,30 +1202,35 @@ class Player {
   }
   update(dt, enemiesList, bulletsList) {
     if (!this.isAlive) return;
+
+    // [트윈 비행기 8레벨/16레벨 전자기장 오라 감속 효과]
+    const isTwin = (this.pType === 2);
+    if (isTwin && this.fireRateStat >= 8) {
+      const fieldRadius = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5) * 2.2;
+      for (let i = 0; i < enemiesList.length; i++) {
+        const e = enemiesList[i];
+        if (!e || e.isDead || e.hp <= 0 || e.isHeavy || e.isBeingSucked) continue;
+        const dSq = (e.x - this.x) * (e.x - this.x) + (e.y - this.y) * (e.y - this.y);
+        if (dSq <= fieldRadius * fieldRadius) {
+          // 전자기장 내에 들어온 적 속도 50% 감속 처리
+          if (!e.isSlowedByTwinField) {
+            e.isSlowedByTwinField = true;
+            e.originalSpeed = e.speed;
+            e.speed *= 0.50;
+          }
+        } else {
+          if (e.isSlowedByTwinField) {
+            e.isSlowedByTwinField = false;
+            if (typeof e.originalSpeed === "number") e.speed = e.originalSpeed;
+          }
+        }
+      }
+    }
+
     if (this.clonePlaneTimer > 0) this.clonePlaneTimer = Math.max(0, this.clonePlaneTimer - dt);
     if (this.laserWeaponTimer > 0) {
       this.laserWeaponTimer = Math.max(0, this.laserWeaponTimer - dt);
-      const curT = performance.now() / 1000;
-      if (curT - this.lastLaserTime >= 0.8) {
-        this.lastLaserTime = curT;
-        this.laserMuzzleFlashTime = curT;
-        let tgt = null;
-        for (let i = 0; i < enemiesList.length; i++) {
-          const e = enemiesList[i];
-          if (!e.isDead && e.hp > 0 && !e.isHeavy && e.y >= 20 && e.y < this.y) {
-            if (!tgt || e.y > tgt.y) tgt = e;
-          }
-        }
-        if (tgt) {
-          activeLasers.push({
-            sx: this.x - 32, sy: this.y + 8,
-            tx: tgt.x, ty: tgt.y,
-            life: 0.20, totalLife: 0.20
-          });
-          safeKillEnemy(tgt, "#00f5ff");
-          playTone(880, 0.20, "sine", -200, 0.12);
-        }
-      }
+      ...
     }
     if (this.shieldRemain > 0) this.shieldRemain = Math.max(0, this.shieldRemain - dt);
 
@@ -1458,6 +1463,35 @@ shoot(curTime, bullets) {
 
       const thrustFlameExtra = this.isMovingUp ? 15 : 0;
       drawVectorPlayer(ctx, this.pType, themeColor, 1.2, thrustFlameExtra, isMissileFlash);
+
+      // [트윈형 8레벨/16레벨 비행기 외곽 전자기장(번개) 오라 렌더링]
+      if (this.pType === 2 && this.fireRateStat >= 8) {
+        const auraR = (this.fireRateStat >= 16 ? this.radius * 2.0 : this.radius * 1.5);
+        ctx.save();
+        ctx.strokeStyle = "rgba(0, 245, 255, 0.45)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, auraR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 외곽 테두리를 따라 지그재그 번개 아크 4갈래 렌더링
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 0.9;
+        for (let b = 0; b < 4; b++) {
+          const startAng = curTime * 8.0 + b * (Math.PI / 2);
+          ctx.beginPath();
+          for (let s = 0; s <= 4; s++) {
+            const ang = startAng + s * 0.15;
+            const rVar = auraR + (s % 2 === 0 ? 2.5 : -2.5);
+            const bx = Math.cos(ang) * rVar;
+            const by = Math.sin(ang) * rVar;
+            if (s === 0) ctx.moveTo(bx, by);
+            else ctx.lineTo(bx, by);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
 
       if (this.laserWeaponTimer > 0) {
         const isFlashing = (curTime - this.laserMuzzleFlashTime) < 0.20;
