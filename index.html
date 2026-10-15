@@ -1862,7 +1862,7 @@ class StationaryMissileLaser {
     this.x = x;
     this.startY = y;
     this.angleOffsetRad = angleOffsetRad;
-    this.targetSide = targetSide; // "LEFT" 또는 "RIGHT" 지정
+    this.targetSide = targetSide;
     this.powerDmg = powerDmg;
     this.missileLv = missileLv;
     this.life = 0.45;
@@ -1881,6 +1881,58 @@ class StationaryMissileLaser {
     const maxBendRad = (20 * Math.PI) / 180;
     const maxSearchWidth = 120;
 
+    let blockedObj = null;
+    let blockedY = 0;
+
+    if (Array.isArray(enemies)) {
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        if (e && !e.isDead && e.hp > 0 && e.isHeavy && e.y < this.startY && e.y >= 20) {
+          if (this.targetSide === "LEFT" && e.x > this.x + 15) continue;
+          if (this.targetSide === "RIGHT" && e.x < this.x - 15) continue;
+          if (Math.abs(e.x - this.x) <= e.radius + 14) {
+            const hitPointY = e.y + e.radius;
+            if (!blockedObj || hitPointY > blockedY) {
+              blockedObj = e;
+              blockedY = hitPointY;
+            }
+          }
+        }
+      }
+    }
+
+    if (meteorManager && Array.isArray(meteorManager.meteors)) {
+      for (let i = 0; i < meteorManager.meteors.length; i++) {
+        const m = meteorManager.meteors[i];
+        if (m && m.active && m.y < this.startY && m.y >= 20) {
+          if (this.targetSide === "LEFT" && m.x > this.x + 15) continue;
+          if (this.targetSide === "RIGHT" && m.x < this.x - 15) continue;
+          if (Math.abs(m.x - this.x) <= m.radius + 14) {
+            const hitPointY = m.y + m.radius;
+            if (!blockedObj || hitPointY > blockedY) {
+              blockedObj = m;
+              blockedY = hitPointY;
+            }
+          }
+        }
+      }
+    }
+
+    if (blockedObj) {
+      this.path.push({ x: this.x, y: blockedY });
+      this.reflectedShards = [];
+      for (let s = 0; s < 5; s++) {
+        const shardLen = 35 + Math.random() * 50;
+        const ang = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 1.8);
+        this.reflectedShards.push({
+          sx: this.x, sy: blockedY,
+          ex: this.x + Math.cos(ang) * shardLen,
+          ey: blockedY + Math.sin(ang) * shardLen
+        });
+      }
+      return;
+    }
+
     let currentX = this.x;
     let currentY = this.startY;
     let lastTarget = null;
@@ -1892,6 +1944,122 @@ class StationaryMissileLaser {
 
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
+        if (!e || e.hp <= 0 || e.isDead || e.isHeavy || e.y >= currentY || e.y < 20) continue;
+        if (lastTarget && e === lastTarget) continue;
+
+        // [요청 반영] step === 0 (첫 발사) 때는 좌우 꺾임 없이 무조건 수직 직진 라인 상에 있는 적만 탐색
+        if (step === 0 && Math.abs(e.x - currentX) > e.radius + 4) continue;
+
+        if (Math.abs(e.x - currentX) <= maxSearchWidth + e.radius) {
+          const dSq = (e.x - currentX) * (e.x - currentX) + (e.y - currentY) * (e.y - currentY);
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            nextEnemy = e;
+          }
+        }
+      }
+
+      if (!nextEnemy) {
+        let remainDist = Math.max(0, currentY);
+        const lastAngle = this.path.length >= 2 ? Math.atan2(this.path[this.path.length-1].x - this.path[this.path.length-2].x, Math.max(1, this.path[this.path.length-2].y - this.path[this.path.length-1].y)) : 0;
+        this.path.push({ x: currentX + Math.sin(lastAngle) * remainDist, y: 0 });
+        break;
+      }
+
+      // 첫 발사는 직진(dx = 0), 두 번째 적부터는 기존 각도 한계 내에서 꺾임 적용
+      let targetX = (step === 0) ? currentX : nextEnemy.x;
+      let dx = targetX - currentX;
+      let dy = Math.max(1, currentY - nextEnemy.y);
+      let angle = Math.atan2(dx, dy);
+      let clampedAngle = (step === 0) ? 0 : Math.max(-maxBendRad, Math.min(maxBendRad, angle));
+
+      currentX = currentX + Math.sin(clampedAngle) * dy;
+      currentY = nextEnemy.y;
+
+      this.path.push({ x: currentX, y: currentY });
+      this.hitEnemies.push({ enemy: nextEnemy, bendCount: bendCount++ });
+      lastTarget = nextEnemy;
+    }
+
+    if (this.path.length === 1) {
+      this.path.push({ x: this.x, y: 0 });
+    }
+  }
+
+  calculateChainPath() {
+    this.path = [{ x: this.x, y: this.startY }];
+    this.hitEnemies = [];
+    this.reflectedShards = [];
+    const maxBendRad = (20 * Math.PI) / 180;
+    const maxSearchWidth = 120;
+
+    let blockedObj = null;
+    let blockedY = 0;
+
+    // 1. 회색 돌맹이(isHeavy) 차단 체크
+    if (Array.isArray(enemies)) {
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        if (e && !e.isDead && e.hp > 0 && e.isHeavy && e.y < this.startY && e.y >= 20) {
+          if (this.targetSide === "LEFT" && e.x > this.x + 15) continue;
+          if (this.targetSide === "RIGHT" && e.x < this.x - 15) continue;
+          if (Math.abs(e.x - this.x) <= e.radius + 14) {
+            const hitPointY = e.y + e.radius;
+            if (!blockedObj || hitPointY > blockedY) {
+              blockedObj = e;
+              blockedY = hitPointY;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. 혜성(Meteors) 차단 체크
+    if (meteorManager && Array.isArray(meteorManager.meteors)) {
+      for (let i = 0; i < meteorManager.meteors.length; i++) {
+        const m = meteorManager.meteors[i];
+        if (m && m.active && m.y < this.startY && m.y >= 20) {
+          if (this.targetSide === "LEFT" && m.x > this.x + 15) continue;
+          if (this.targetSide === "RIGHT" && m.x < this.x - 15) continue;
+          if (Math.abs(m.x - this.x) <= m.radius + 14) {
+            const hitPointY = m.y + m.radius;
+            if (!blockedObj || hitPointY > blockedY) {
+              blockedObj = m;
+              blockedY = hitPointY;
+            }
+          }
+        }
+      }
+    }
+
+    // 돌맹이나 혜성에 막힌 경우 레이저 중단 및 반사 파편(Shards) 생성
+    if (blockedObj) {
+      this.path.push({ x: this.x, y: blockedY });
+      this.reflectedShards = [];
+      for (let s = 0; s < 5; s++) {
+        const shardLen = 35 + Math.random() * 50;
+        const ang = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 1.8);
+        this.reflectedShards.push({
+          sx: this.x, sy: blockedY,
+          ex: this.x + Math.cos(ang) * shardLen,
+          ey: blockedY + Math.sin(ang) * shardLen
+        });
+      }
+      return;
+    }
+
+    let currentX = this.x;
+    let currentY = this.startY;
+    let lastTarget = null;
+    let bendCount = 0;
+
+    for (let step = 0; step < 3; step++) {
+      let nextEnemy = null;
+      let minDistSq = Infinity;
+
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        // 회색돌(isHeavy) 제외, 오직 적 비행기만 관통 대상으로 삼음
         if (!e || e.hp <= 0 || e.isDead || e.isHeavy || e.y >= currentY || e.y < 20) continue;
         if (lastTarget && e === lastTarget) continue;
         if (this.targetSide === "LEFT" && step === 0 && e.x > currentX - 2) continue;
@@ -2975,8 +3143,9 @@ class Enemy {
 
     if (this.hasShield) {
       ctx.save();
-      const isDamaged = (this.shieldHits >= 10);
-      if (isDamaged) ctx.globalAlpha = 0.5;
+      // 보호막 내구도가 3 이하일 때 흐믈흐믈한 파형 왜곡 애니메이션 활성화
+      const isDamaged = (this.hp <= 3 || this.shieldHits >= 10);
+      if (isDamaged && Math.floor(curTime * 15) % 2 === 0) ctx.globalAlpha = 0.6;
       ctx.strokeStyle = "#00f5ff";
       ctx.lineWidth = 2.0;
 
@@ -2988,7 +3157,7 @@ class Enemy {
         const waveCount = 12;
         for (let i = 0; i <= waveCount; i++) {
           const theta = (i / waveCount) * Math.PI * 2;
-          const waveR = r + Math.sin(theta * 6 + curTime * 10) * 3.5;
+          const waveR = r + Math.sin(theta * 6 + curTime * 16) * 4.5;
           const px = this.x + Math.cos(theta) * waveR;
           const py = this.y + Math.sin(theta) * waveR;
           if (i === 0) ctx.moveTo(px, py);
