@@ -1626,18 +1626,19 @@ class MissileShard {
 
     if (this.life <= 0) return;
 
-    // 충돌 판정 (회색 돌, 보호막 적, 혜성 반응 안 함)
+    // 파편에 닿은 적 즉시 파괴 판정 (회색 돌 및 보스 제외, 일반 적 및 보호막 적 즉사)
     for (let ei = enemiesList.length - 1; ei >= 0; ei--) {
       const e = enemiesList[ei];
       if (!e || e.isDead || e.hp <= 0 || e.isBeingSucked || e.y < 20) continue;
-      if (e.hasShield || e.isHeavy) continue;
+      if (e.isHeavy) continue; // 단단한 암석 제외
 
       const dSq = (this.x - e.x) * (this.x - e.x) + (this.y - e.y) * (this.y - e.y);
       const hitR = this.radius + e.radius;
       if (dSq <= hitR * hitR) {
+        e.hasShield = false; // 보호막이 있다면 무력화
         safeKillEnemy(e, "#00f5ff");
         playExplosionSound();
-        this.life = 0; // 적 1개 파괴 후 즉시 삭제
+        this.life = 0; // 파편 소모
         break;
       }
     }
@@ -4523,7 +4524,10 @@ function safeGameLoop(now) {
               applyDamageToEnemy(e, missileDamage, "MISSILE_NEEDLE");
 
               const curMissileLv = player ? (player.missileStat || 1) : 1;
-              const shardChance = (curMissileLv >= 16) ? 0.40 : 0.30;
+              // 미사일 16렙 이상 50%, 8렙 이상 30% 확률로 파편 생성
+              let shardChance = 0;
+              if (curMissileLv >= 16) shardChance = 0.50;
+              else if (curMissileLv >= 8) shardChance = 0.30;
 
               if (!wasDeadBefore && e.isDead && Math.random() < shardChance) {
                 missileShards.push(new MissileShard(hitX, hitY, curMissileLv));
